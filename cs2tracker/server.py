@@ -31,6 +31,11 @@ class ApiServer:
             port=self._settings.api_port,
             log_level=self._settings.log_level.lower(),
             access_log=False,
+            # `log_config=None` empeche uvicorn d'installer ses propres
+            # gestionnaires colorises. Ils interrogent `sys.stdout.isatty()`, ce
+            # qui echoue dans une application fenetree sans console. Notre
+            # configuration de logs (console + fichier) suffit de toute facon.
+            log_config=None,
             # Le GSI de CS2 n'envoie pas d'en-tete Connection: keep-alive fiable ;
             # une duree de vie courte evite d'accumuler des sockets mortes.
             timeout_keep_alive=15,

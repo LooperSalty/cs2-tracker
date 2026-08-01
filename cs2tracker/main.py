@@ -1,15 +1,18 @@
 """Point d'entrée de l'application.
 
 Modes disponibles :
-  ``cs2tracker``               interface web locale + API (mode par defaut)
-  ``cs2tracker --desktop``     fenetre native Qt au lieu du navigateur
+  ``cs2tracker``               fenetre native + API locale (mode par defaut)
+  ``cs2tracker --browser``     API + interface dans le navigateur
   ``cs2tracker --api-only``    API seule, pour un client tiers ou un service
+  ``cs2tracker --qt``          ancienne fenetre Qt (necessite PySide6)
   ``cs2tracker --analyse X``   analyse d'un joueur en console
   ``cs2tracker --install-gsi`` ecrit la configuration GSI dans CS2
 
-Le mode par defaut est volontairement le mode web : il ne depend pas de Qt,
-ce qui rend l'executable Windows nettement plus leger et son demarrage plus
-rapide. La fenetre Qt reste disponible pour qui prefere une application native.
+Le mode par defaut ouvre une vraie fenetre d'application : l'interface est
+rendue par WebView2, le moteur integre a Windows. Aucun navigateur ne s'ouvre
+et aucune console n'apparait. Fermer la fenetre laisse l'application en
+arriere-plan, dans la zone de notification, pour que l'API continue de recevoir
+les donnees du jeu pendant la partie.
 """
 
 from __future__ import annotations
@@ -17,8 +20,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-import threading
-import webbrowser
 
 from cs2tracker import __app_name__, __version__
 from cs2tracker.config import get_settings
@@ -34,17 +35,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
-        "--desktop",
+        "--browser",
         action="store_true",
-        help="Ouvrir la fenetre native Qt au lieu du navigateur",
+        help="Ouvrir l'interface dans le navigateur au lieu d'une fenetre",
     )
     mode.add_argument(
         "--api-only", action="store_true", help="Demarrer uniquement l'API locale"
     )
-    parser.add_argument(
-        "--no-browser",
-        action="store_true",
-        help="Ne pas ouvrir automatiquement le navigateur",
+    mode.add_argument(
+        "--qt", action="store_true", help="Ancienne fenetre Qt (necessite PySide6)"
     )
     parser.add_argument(
         "--analyse",
@@ -56,39 +55,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Installer la configuration GSI dans CS2 puis quitter",
     )
+    parser.add_argument(
+        "--overlay",
+        action="store_true",
+        help="Lancer aussi l'overlay affiche par-dessus le jeu",
+    )
     parser.add_argument("--version", action="store_true", help="Afficher la version")
     return parser.parse_args(argv)
-
-
-def _run_web(open_browser: bool) -> int:
-    """Mode par defaut : API locale + interface web, sans dependance a Qt."""
-    from cs2tracker.server import ApiServer
-
-    settings = get_settings()
-    server = ApiServer(settings)
-    url = f"{settings.api_base_url}/app/"
-
-    if open_browser:
-        def launch_when_ready() -> None:
-            if server.wait_until_ready():
-                webbrowser.open(url)
-            else:
-                logger.error("L'API n'a pas demarre : ouvre %s manuellement.", url)
-
-        threading.Thread(target=launch_when_ready, daemon=True).start()
-
-    print(f"{__app_name__} {__version__}")
-    print(f"  Interface : {url}")
-    print(f"  API       : {settings.api_base_url}/docs")
-    if not settings.has_steam_key:
-        print("  Cle API Steam absente — renseigne-la dans l'onglet Configuration.")
-    print("  Ctrl+C pour quitter.")
-
-    try:
-        server.run_blocking()
-    except KeyboardInterrupt:
-        pass
-    return 0
 
 
 def _run_gui() -> int:
@@ -201,24 +174,34 @@ def main(argv: list[str] | None = None) -> int:
     if args.analyse:
         return _run_console_analysis(args.analyse)
 
+    if args.overlay:
+        from cs2tracker.desktop import overlay_launcher
+
+        _started, message = overlay_launcher.launch(settings.api_port)
+        logger.info(message)
+
     if args.api_only:
         from cs2tracker.server import run_api_only
 
         run_api_only(settings)
         return 0
 
-    if args.desktop:
+    if args.qt:
         try:
             return _run_gui()
         except ImportError:
             print(
-                "La fenetre native necessite PySide6 : installe-le avec\n"
+                "L'ancienne fenetre Qt necessite PySide6 :\n"
                 "    pip install PySide6\n"
-                "ou lance l'application sans --desktop pour utiliser l'interface web."
+                "Lance l'application sans --qt pour la fenetre native."
             )
             return 2
 
-    return _run_web(open_browser=not args.no_browser)
+    from cs2tracker.desktop.app import open_in_browser_fallback, run_desktop
+
+    if args.browser:
+        return open_in_browser_fallback(settings)
+    return run_desktop(settings)
 
 
 if __name__ == "__main__":

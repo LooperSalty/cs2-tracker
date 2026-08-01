@@ -1,19 +1,23 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Specification PyInstaller de CS2 Tracker.
 
-Produit `CS2Tracker.exe`, un executable autonome ne necessitant ni Python ni
-aucune dependance installee sur la machine cible.
+Produit `CS2Tracker.exe`, application de bureau autonome ne necessitant ni
+Python ni aucune dependance installee sur la machine cible.
 
-Qt est volontairement exclu : le mode par defaut est l'interface web, ce qui
-divise la taille de l'executable par environ quatre et accelere nettement son
-demarrage. La fenetre native reste utilisable depuis les sources.
+Deux choix determinants :
+
+* `console=False` — aucune fenetre de terminal n'apparait. En contrepartie, une
+  erreur au demarrage serait invisible : `desktop/app.py` les affiche donc dans
+  une boite de dialogue Windows.
+* Qt est exclu — l'interface est rendue par WebView2, deja present dans
+  Windows 11. Embarquer PySide6 quadruplerait la taille pour rien.
 
     pyinstaller packaging/cs2tracker.spec --noconfirm
 """
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 PROJECT_ROOT = Path(SPECPATH).parent
 
@@ -24,8 +28,12 @@ datas = [
     (str(PROJECT_ROOT / "cs2tracker" / "storage" / "schema.sql"), "cs2tracker/storage"),
 ]
 
-# Uvicorn et httpx chargent une partie de leurs modules dynamiquement :
-# PyInstaller ne peut pas les deduire de l'analyse statique.
+# pywebview embarque les assemblages WebView2 dans son propre paquet ; sans eux
+# la fenetre ne peut pas s'ouvrir.
+datas += collect_data_files("webview")
+datas += collect_data_files("clr_loader")
+
+# Modules charges dynamiquement, invisibles a l'analyse statique.
 hiddenimports = [
     *collect_submodules("uvicorn"),
     "uvicorn.logging",
@@ -37,13 +45,27 @@ hiddenimports = [
     "uvicorn.protocols.websockets.websockets_impl",
     "uvicorn.lifespan.on",
     "anyio._backends._asyncio",
+    # Fenetre native : backend WebView2 et pont .NET.
+    "webview.platforms.edgechromium",
+    "clr_loader",
+    "clr_loader.netfx",
+    "pythonnet",
+    # Icone de zone de notification.
+    "pystray._win32",
+    "PIL.Image",
+    "PIL.ImageDraw",
+    # Remplace sys.stdout/stderr quand aucune console n'est rattachee.
+    "cs2tracker.std_streams",
 ]
 
-# Tout ce qui n'est pas necessaire au mode web.
+# Tout ce qui n'est pas necessaire a l'application.
 excludes = [
     "PySide6", "shiboken6", "PyQt5", "PyQt6",
     "tkinter", "matplotlib", "numpy", "pandas", "scipy",
-    "PIL", "pytest", "_pytest", "playwright", "IPython",
+    "pytest", "_pytest", "playwright", "IPython",
+    # Backends pywebview inutilises sous Windows.
+    "webview.platforms.cocoa", "webview.platforms.gtk", "webview.platforms.qt",
+    "webview.platforms.android",
 ]
 
 a = Analysis(
@@ -75,9 +97,9 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    # Console visible : elle affiche l'URL de l'interface et les erreurs de
-    # demarrage. Sans elle, un port occupe produirait un echec silencieux.
-    console=True,
+    # Application fenetree : aucune console. Les erreurs de demarrage passent
+    # par une boite de dialogue (voir cs2tracker/desktop/app.py).
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Final
 
+from cs2tracker.std_streams import NullStream
+
 _SECRET_PATTERNS: Final = (
     re.compile(r"(key=)[A-Za-z0-9]{8,}", re.IGNORECASE),
-    re.compile(r"(token[\"'=:\s]+)[A-Za-z0-9_\-]{8,}", re.IGNORECASE),
+    re.compile(r"(token[\"'=:\s]+)[A-Za-z0-9_-]{8,}", re.IGNORECASE),
 )
 
 _LOG_FORMAT: Final = "%(asctime)s %(levelname)-8s %(name)-28s %(message)s"
@@ -41,10 +44,13 @@ def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
     formatter = logging.Formatter(_LOG_FORMAT, datefmt="%H:%M:%S")
     secret_filter = SecretMaskingFilter()
 
-    console = logging.StreamHandler()
-    console.setFormatter(formatter)
-    console.addFilter(secret_filter)
-    root.addHandler(console)
+    # Sans console rattachee (application fenetree), un StreamHandler sur un
+    # flux absent leverait a chaque enregistrement.
+    if sys.stdout is not None and not isinstance(sys.stdout, NullStream):
+        console = logging.StreamHandler()
+        console.setFormatter(formatter)
+        console.addFilter(secret_filter)
+        root.addHandler(console)
 
     if log_dir is not None:
         try:

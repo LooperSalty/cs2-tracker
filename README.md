@@ -40,10 +40,18 @@ heuristique et explicable.
 
 ### Option A — l'exécutable (recommandé)
 
-1. Télécharge `CS2Tracker.exe` depuis la page
-   [Releases](../../releases).
-2. Double-clique. L'interface s'ouvre dans ton navigateur sur
-   `http://127.0.0.1:8642/app/`.
+1. Télécharge `CS2Tracker.exe` depuis la page [Releases](../../releases).
+2. Double-clique.
+
+Une **fenêtre d'application** s'ouvre. Pas de terminal, pas de navigateur :
+l'interface est rendue par WebView2, le moteur intégré à Windows.
+
+Fermer la fenêtre ne quitte pas le programme — il continue en arrière-plan dans
+la zone de notification, pour que l'API reçoive les données du jeu pendant ta
+partie. Clique sur l'icône pour rouvrir la fenêtre, ou choisis **Quitter**.
+
+Télécharge aussi `CS2TrackerOverlay.exe` et place-le **à côté** si tu veux
+l'affichage par-dessus le jeu.
 
 Aucun Python à installer, aucune dépendance. Un dossier de données est créé dans
 `%LOCALAPPDATA%\CS2Tracker`.
@@ -95,15 +103,26 @@ l'application. Rien n'est lu en mémoire, rien n'est injecté.
 ## Utilisation
 
 ```powershell
-CS2Tracker.exe                      # interface web + API (défaut)
-CS2Tracker.exe --api-only           # API seule, sans navigateur
+CS2Tracker.exe                      # fenêtre native + API (défaut)
+CS2Tracker.exe --overlay            # lance aussi l'overlay par-dessus le jeu
+CS2Tracker.exe --browser            # interface dans le navigateur
+CS2Tracker.exe --api-only           # API seule, pour un client tiers
 CS2Tracker.exe --analyse <steamid>  # rapport d'analyse en console
 CS2Tracker.exe --install-gsi        # écrit la configuration GSI puis quitte
-
-python run.py --desktop             # fenêtre native Qt (depuis les sources)
 ```
 
 Documentation interactive de l'API : `http://127.0.0.1:8642/docs`.
+
+### L'overlay en jeu
+
+Onglet **Configuration** → **Lancer l'overlay**, ou via l'icône de la zone de
+notification. Il affiche score, manche, bombe et risque de chaque joueur
+par-dessus CS2.
+
+**Règle CS2 sur « Plein écran fenêtre »** : une fenêtre superposée ne peut pas
+s'afficher au-dessus d'une application en plein écran exclusif.
+
+`F8` masque · `F9` déplace · `Ctrl+Maj+F8` ferme.
 
 ---
 

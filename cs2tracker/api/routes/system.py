@@ -78,6 +78,33 @@ async def servers(context: ContextDep) -> dict:
     return ok({"servers": status_payload, "players_online": player_count})
 
 
+@router.get("/overlay", summary="Etat de l'overlay en jeu")
+async def overlay_status(context: ContextDep) -> dict:
+    from cs2tracker.desktop import overlay_launcher
+
+    executable = overlay_launcher.find_overlay()
+    return ok(
+        {
+            "available": executable is not None,
+            "running": overlay_launcher.is_running(),
+            "path": str(executable) if executable else None,
+        }
+    )
+
+
+@router.post("/overlay", summary="Lancer l'overlay en jeu")
+async def overlay_start(context: ContextDep) -> dict:
+    """Demarre l'executable natif affiche par-dessus CS2.
+
+    L'overlay est un processus distinct qui n'injecte rien dans le jeu : il
+    interroge cette meme API en HTTP.
+    """
+    from cs2tracker.desktop import overlay_launcher
+
+    started, message = overlay_launcher.launch(context.settings.api_port)
+    return ok({"started": started, "message": message})
+
+
 @router.post("/steam-key", summary="Enregistrer la cle API Steam")
 async def save_steam_key(payload: SteamKeyRequest) -> dict:
     """Écrit la clé dans le ``.env`` local.

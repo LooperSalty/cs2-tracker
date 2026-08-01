@@ -50,12 +50,10 @@ Write-Host "Executable produit : $exe ($sizeMb Mo)" -ForegroundColor Green
 if (-not $SkipSmokeTest) {
     Write-Host "`n[4/4] Verification de demarrage..." -ForegroundColor Yellow
 
-    $versionOutput = & $exe --version 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "L'executable ne repond pas a --version : $versionOutput" }
-    Write-Host "  --version : $versionOutput"
-
-    # Demarrage reel de l'API sur un port dedie, pour ne pas heurter une
-    # instance de developpement deja lancee.
+    # L'executable est desormais fenetre (console=False) : il n'ecrit plus rien
+    # sur la sortie standard. La seule verification possible est fonctionnelle —
+    # on demarre l'API et on interroge ses endpoints.
+    # Port dedie pour ne pas heurter une instance de developpement deja lancee.
     $env:CS2T_API_PORT = "8699"
     $process = Start-Process -FilePath $exe -ArgumentList "--api-only" -PassThru -WindowStyle Hidden
     try {

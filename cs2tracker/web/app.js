@@ -171,7 +171,10 @@ function showPage(name) {
     });
     if (name === "live") live.start(); else live.stop();
     if (name === "matches") matches.load();
-    if (name === "settings") settings.refresh();
+    if (name === "settings") {
+        settings.refresh();
+        settings.refreshOverlay();
+    }
 }
 
 $$(".nav-item").forEach((item) =>
@@ -1114,6 +1117,28 @@ const settings = {
         }
     },
 
+    async refreshOverlay() {
+        const label = $("#overlay-state");
+        const button = $("#start-overlay");
+        try {
+            const state = await api("/api/system/overlay");
+            if (state.running) {
+                label.textContent = "Overlay actif.";
+                button.textContent = "Overlay deja lance";
+            } else if (state.available) {
+                label.textContent = "Pret a etre lance.";
+                button.textContent = "Lancer l'overlay";
+            } else {
+                label.textContent =
+                    "CS2TrackerOverlay.exe introuvable — telecharge-le et place-le "
+                    + "a cote de CS2Tracker.exe.";
+                button.textContent = "Lancer l'overlay";
+            }
+        } catch {
+            label.textContent = "";
+        }
+    },
+
     renderRig(status) {
         const live_ = status.live || {};
         $("#rig-steam").className = `dot ${status.steam_api_configured ? "on" : "off"}`;
@@ -1203,6 +1228,20 @@ $("#remove-gsi").addEventListener("click", async () => {
 });
 
 $("#refresh-status").addEventListener("click", () => settings.refresh());
+
+$("#start-overlay").addEventListener("click", async () => {
+    const button = $("#start-overlay");
+    button.disabled = true;
+    try {
+        const result = await api("/api/system/overlay", { method: "POST" });
+        toast(result.message, result.started ? "ok" : "bad");
+        settings.refreshOverlay();
+    } catch (error) {
+        toast(error.message, "bad");
+    } finally {
+        button.disabled = false;
+    }
+});
 
 $("#clear-cache").addEventListener("click", async () => {
     try {
