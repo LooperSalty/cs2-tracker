@@ -59,6 +59,7 @@
 
             <form class="search" id="player-search">
                 <input class="field" id="player-query" autocomplete="off" spellcheck="false"
+                       aria-label="Identifiant Steam du joueur a chercher"
                        placeholder="76561198000000000 · STEAM_1:0:12345 · steamcommunity.com/id/pseudo">
                 <button class="btn go" type="submit">Chercher</button>
                 <button class="btn" type="button" id="player-analyse" disabled>Analyser ce joueur</button>
@@ -75,21 +76,36 @@
                     <div class="tags" id="player-tags"></div>
                 </div>
 
-                <div class="strip" id="player-strip"></div>
+                <div class="overall" id="player-overall" hidden>
+                    <div>
+                        <div class="overall-figure" id="overall-figure">—</div>
+                    </div>
+                    <div class="overall-body">
+                        <div class="overall-tier" id="overall-tier">—</div>
+                        <div class="overall-note" id="overall-note"></div>
+                    </div>
+                    <a class="btn quiet" id="export-csv" download>Exporter en CSV</a>
+                </div>
+
+                <div class="rank-grid" id="player-ranks"></div>
+                <div id="player-drift"></div>
 
                 <div class="tabs" role="tablist">
                     <button class="tab" role="tab" aria-selected="true" data-panel="overview">Vue d'ensemble</button>
                     <button class="tab" role="tab" aria-selected="false" data-panel="weapons">Armes</button>
                     <button class="tab" role="tab" aria-selected="false" data-panel="maps">Cartes</button>
                     <button class="tab" role="tab" aria-selected="false" data-panel="library">Bibliotheque</button>
-                    <button class="tab" role="tab" aria-selected="false" data-panel="history">Historique</button>
+                    <button class="tab" role="tab" aria-selected="false" data-panel="trend">Evolution</button>
                 </div>
 
                 <div class="panel active" data-panel="overview"><div class="table-wrap"><table class="data-table" id="tbl-overview"></table></div></div>
                 <div class="panel" data-panel="weapons"><div class="table-wrap"><table class="data-table" id="tbl-weapons"></table></div></div>
                 <div class="panel" data-panel="maps"><div class="table-wrap"><table class="data-table" id="tbl-maps"></table></div></div>
                 <div class="panel" data-panel="library"><div class="table-wrap"><table class="data-table" id="tbl-library"></table></div></div>
-                <div class="panel" data-panel="history"><div class="table-wrap"><table class="data-table" id="tbl-history"></table></div></div>
+                <div class="panel" data-panel="trend">
+                    <div class="chart-grid" id="player-charts"></div>
+                    <div class="table-wrap" style="margin-top:20px"><table class="data-table" id="tbl-history"></table></div>
+                </div>
             </div>
 
             <div class="empty" id="player-empty">
@@ -149,10 +165,28 @@
 
             <form class="search" id="ac-search">
                 <input class="field" id="ac-query" autocomplete="off" spellcheck="false"
+                       aria-label="SteamID64 du ou des joueurs a analyser"
                        placeholder="SteamID64 — separe par des virgules pour comparer plusieurs joueurs">
                 <button class="btn go" type="submit">Analyser</button>
                 <button class="btn" type="button" id="ac-lobby">Lobby en direct</button>
+                <button class="btn quiet" type="button" id="ac-toggle-paste">Coller un lobby</button>
             </form>
+
+            <div class="paste-zone" id="ac-paste" hidden>
+                <p class="paste-help">
+                    En partie classique, CS2 ne transmet que <b>ton propre</b> etat.
+                    Pour analyser les dix joueurs : ouvre la console avec <code>~</code>,
+                    tape <code>status</code>, puis colle toute la sortie ici.
+                    Le format exact n'a pas d'importance.
+                </p>
+                <textarea class="field" id="ac-paste-text" spellcheck="false"
+                          aria-label="Sortie de la commande status de la console CS2"
+                          placeholder="# userid name uniqueid connected ping loss state&#10;#  2 1 &quot;Joueur&quot; [U:1:123456789] 05:23 42 0 active"></textarea>
+                <div class="setting-row" style="margin-top:10px">
+                    <button class="btn go" type="button" id="ac-paste-run">Analyser ces joueurs</button>
+                    <span class="paste-help" id="ac-paste-found" style="margin:0"></span>
+                </div>
+            </div>
 
             <div id="ac-body" hidden>
                 <div class="verdict-layout">
@@ -239,7 +273,8 @@
                    <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a>.
                    Elle est stockee dans le fichier <code>.env</code> local et n'est envoyee qu'a Steam.</p>
                 <div class="setting-row">
-                    <input class="field" id="steam-key" type="password" autocomplete="off" placeholder="Colle ta cle ici">
+                    <input class="field" id="steam-key" type="password" autocomplete="off"
+                           aria-label="Cle API Steam" placeholder="Colle ta cle ici">
                     <button class="btn go" id="save-key">Enregistrer</button>
                 </div>
             </div>
@@ -249,7 +284,7 @@
                 <p>Ecrit <code>gamestate_integration_cs2tracker.cfg</code> dans le dossier de configuration de CS2.
                    C'est le mecanisme officiel de Valve : le jeu pousse son etat vers cette application. Redemarre CS2 apres l'installation.</p>
                 <div class="setting-row">
-                    <label style="color:var(--ash);font-size:12.5px">Cadence d'envoi</label>
+                    <label for="gsi-throttle" style="color:var(--ash);font-size:12.5px">Cadence d'envoi</label>
                     <input class="field" id="gsi-throttle" type="number" min="0.01" max="5" step="0.05" value="0.1" style="width:90px;flex:0 0 90px">
                     <span style="color:var(--dust);font-size:12px">seconde(s)</span>
                     <button class="btn go" id="install-gsi">Installer</button>
@@ -273,7 +308,7 @@
     </main>
 </div>
 
-<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<output class="toasts" id="toasts" aria-live="polite"></output>
 
 <script src="/app/app.js"></script>
 </body>

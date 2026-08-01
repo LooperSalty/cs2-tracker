@@ -25,9 +25,9 @@ _PROFILE_URL_RE: Final = re.compile(
     r"steamcommunity\.com/profiles/(\d{17})", re.IGNORECASE
 )
 _VANITY_URL_RE: Final = re.compile(
-    r"steamcommunity\.com/id/([A-Za-z0-9_.\-]+)", re.IGNORECASE
+    r"steamcommunity\.com/id/([A-Za-z0-9_.-]+)", re.IGNORECASE
 )
-_VANITY_RE: Final = re.compile(r"^[A-Za-z0-9_.\-]{2,64}$")
+_VANITY_RE: Final = re.compile(r"^[A-Za-z0-9_.-]{2,64}$")
 
 #: Un SteamID64 individuel valide est borné : 2^32 comptes possibles.
 _MAX_ACCOUNT_ID: Final = 2**32 - 1
@@ -135,6 +135,59 @@ def parse(raw: str) -> ResolveRequest:
         return ResolveRequest(None, text)
 
     raise InvalidSteamIdError(f"Format non reconnu: {raw!r}")
+
+
+#: Motifs d'identifiants reperables dans un texte libre (sortie de `status`,
+#: liste collee depuis un site tiers, journal de partie…).
+_SCAN_PATTERNS: Final = (
+    re.compile(r"\[?U:1:(\d{1,10})\]?", re.IGNORECASE),
+    re.compile(r"STEAM_[0-5]:([01]):(\d{1,10})", re.IGNORECASE),
+    re.compile(r"\b(7656119\d{10})\b"),
+)
+
+
+def extract_all(text: str, *, limit: int = 64) -> tuple[SteamIdentity, ...]:
+    """Repere tous les identifiants Steam presents dans un texte quelconque.
+
+    Concu pour la sortie de la commande `status` de la console CS2, dont le
+    format a change entre CS:GO et CS2. Plutot que de coller a une mise en page
+    precise — qui casserait a la prochaine mise a jour du jeu — on balaie le
+    texte a la recherche des motifs d'identifiants eux-memes.
+
+    Les doublons sont ecartes en conservant l'ordre d'apparition, qui reflete
+    l'ordre du tableau des scores.
+    """
+    if not text:
+        return ()
+
+    found: list[SteamIdentity] = []
+    seen: set[int] = set()
+
+    def remember(identity: SteamIdentity) -> None:
+        if identity.steamid64 not in seen:
+            seen.add(identity.steamid64)
+            found.append(identity)
+
+    for match in _SCAN_PATTERNS[0].finditer(text):
+        try:
+            remember(from_account_id(int(match.group(1))))
+        except InvalidSteamIdError:
+            continue
+
+    for match in _SCAN_PATTERNS[1].finditer(text):
+        try:
+            account_id = int(match.group(2)) * 2 + int(match.group(1))
+            remember(from_account_id(account_id))
+        except InvalidSteamIdError:
+            continue
+
+    for match in _SCAN_PATTERNS[2].finditer(text):
+        try:
+            remember(from_steamid64(match.group(1)))
+        except InvalidSteamIdError:
+            continue
+
+    return tuple(found[:limit])
 
 
 def account_creation_hint(account_id: int) -> str:

@@ -127,6 +127,40 @@ function textAnchorFor(cos) {
     return cos > 0 ? "start" : "end";
 }
 
+/**
+ * Met en forme une valeur selon son unite, en adaptant le nombre de decimales
+ * a l'ordre de grandeur : 0.85 se lit mieux que 1, et 118 mieux que 118.00.
+ */
+function formatMetric(value, unit, digits = 0) {
+    if (unit === "%") return pct(value, digits || 1);
+    return dec(value, Math.abs(value) >= 20 ? 0 : 2);
+}
+
+/**
+ * Formule le rang d'une metrique.
+ *
+ * « TOP 93 % » pour un joueur classe dans les 7 % les plus faibles se lit comme
+ * une bonne nouvelle : le cadrage « top » n'a de sens qu'au-dessus de la
+ * mediane. En dessous, on annonce le centile tel quel.
+ */
+function rankLabel(percentile, topPercent) {
+    if (percentile >= 50) return `TOP ${topPercent}%`;
+    return `${percentile.toFixed(0)}ᵉ pct`;
+}
+
+/** Rang d'une arme dans sa categorie, ou tiret si non calculable. */
+function weaponRank(ranking) {
+    if (!ranking) return "—";
+    return `top ${(100 - ranking.percentile).toFixed(0)}%`;
+}
+
+/** Fleche et classe de couleur associees au sens d'une variation. */
+function trendMark(gap) {
+    if (gap > 0) return { arrow: "▲", cls: "up" };
+    if (gap < 0) return { arrow: "▼", cls: "down" };
+    return { arrow: "", cls: "" };
+}
+
 /* ------------------------------------------------------------------- routeur */
 
 function showPage(name) {
@@ -216,7 +250,9 @@ const player = {
         if (summary.playing_cs2) addTag("En jeu sur CS2", "hot");
         else if (summary.in_game) addTag(summary.game_extra_info || "En jeu", "");
 
-        this.renderStrip(stats, account);
+        this.renderOverall(profile.percentiles);
+        this.renderRanks(profile.percentiles);
+        this.renderDrift(profile.drift);
         this.renderOverview(profile);
         this.renderWeapons(stats.weapons || []);
         this.renderMaps(stats.maps || []);
@@ -224,25 +260,105 @@ const player = {
         this.loadHistory();
     },
 
-    renderStrip(stats, account) {
-        const ratios = stats.ratios || {};
-        const totals = stats.totals || {};
-        const cells = [
-            ["K/D", dec(ratios.kd)],
-            ["Headshots", pct(ratios.headshot_rate)],
-            ["Precision", pct(ratios.accuracy)],
-            ["Degats / manche", dec(ratios.damage_per_round, 0)],
-            ["Kills / manche", dec(ratios.kills_per_round)],
-            ["Heures CS2", int(account.cs2_hours ?? totals.hours_played)],
-            ["Manches", int(totals.rounds_played)],
-        ];
-        $("#player-strip").innerHTML = cells
-            .map(([label, value]) => `
-                <div class="stat">
-                    <div class="stat-value">${value}</div>
-                    <div class="stat-label">${label}</div>
-                </div>`)
+    /**
+     * Bandeau de rang global : la position du joueur dans la population est
+     * l'information dominante de la page, pas ses chiffres bruts.
+     */
+    renderOverall(percentiles) {
+        const banner = $("#player-overall");
+        if (!percentiles?.available) {
+            banner.hidden = true;
+            return;
+        }
+        banner.hidden = false;
+        const figure = $("#overall-figure");
+        figure.textContent = `${percentiles.overall_percentile}`;
+        figure.className = `overall-figure tier-${percentiles.overall_tier}`;
+
+        $("#overall-tier").textContent = `${percentiles.overall_tier_label} — ${
+            rankLabel(percentiles.overall_percentile, percentiles.overall_top_percent)
+        }`;
+        $("#overall-tier").className = `overall-tier tier-${percentiles.overall_tier}`;
+
+        const sample = percentiles.sample || {};
+        $("#overall-note").textContent = sample.reliable
+            ? `Percentile moyen sur 10 metriques, calcule sur ${int(sample.rounds)} manches.`
+            : `Echantillon mince (${int(sample.rounds)} manches) : ce classement reste indicatif.`;
+
+        $("#export-csv").href = `/api/players/${this.steamid}/export.csv`;
+    },
+
+    /** Une tuile par métrique : valeur, percentile et repère de la moyenne. */
+    renderRanks(percentiles) {
+        const grid = $("#player-ranks");
+        if (!percentiles?.available) {
+            grid.innerHTML = "";
+            return;
+        }
+
+        grid.innerHTML = percentiles.metrics
+            .map((metric) => {
+                const shown = formatMetric(metric.value, metric.unit, 1);
+                const average = formatMetric(metric.average, metric.unit, 0);
+                return `
+                <div class="rank-tile">
+                    <div class="rank-head">
+                        <span class="rank-value">${shown}</span>
+                        <span class="rank-top tier-${metric.tier}">${rankLabel(metric.percentile, metric.top_percent)}</span>
+                    </div>
+                    <div class="rank-label">${escapeAttr(metric.label)}</div>
+                    <div class="rank-track">
+                        <div class="rank-fill bg-${metric.tier}" style="width:${metric.percentile}%"></div>
+                        <div class="rank-avg" title="Moyenne de la population"></div>
+                    </div>
+                    <div class="rank-foot">
+                        <span class="tier-${metric.tier}">${escapeAttr(metric.tier_label)}</span>
+                        <span>moy. ${average}</span>
+                    </div>
+                </div>`;
+            })
             .join("");
+    },
+
+    /** Évolution entre deux relevés — ce que les stats à vie ne montrent pas. */
+    renderDrift(drift) {
+        const host = $("#player-drift");
+        if (!drift?.recent) {
+            host.innerHTML = "";
+            return;
+        }
+
+        const recent = drift.recent;
+        const delta = drift.delta || {};
+        const notable = Math.abs(delta.headshot_rate || 0) > 0.05
+            || Math.abs(delta.accuracy || 0) > 0.03;
+
+        const line = (label, value, gap, asPercent) => {
+            if (value === null || value === undefined) return "";
+            const shown = asPercent ? pct(value) : dec(value);
+            if (gap === null || gap === undefined) {
+                return `<span>${label} <b>${shown}</b></span>`;
+            }
+            const { arrow, cls } = trendMark(gap);
+            const amount = asPercent ? `${(gap * 100).toFixed(1)} pts` : gap.toFixed(2);
+            return `<span>${label} <b>${shown}</b> <span class="${cls}">${arrow} ${amount}</span></span>`;
+        };
+
+        host.innerHTML = `
+            <div class="drift ${notable ? "" : "calm"}">
+                <span class="eyebrow">Depuis le releve precedent</span>
+                ${int(recent.rounds)} manches jouees entre le
+                ${shortDate(drift.from)} et le ${shortDate(drift.to)}.
+                ${notable
+                    ? "Le niveau sur cette periode s'ecarte nettement de l'historique du compte."
+                    : "Le niveau sur cette periode reste conforme a l'historique du compte."}
+                <div class="drift-grid">
+                    ${line("Headshots", recent.headshot_rate, delta.headshot_rate, true)}
+                    ${line("Precision", recent.accuracy, delta.accuracy, true)}
+                    ${line("Kills/manche", recent.kills_per_round, delta.kills_per_round, false)}
+                    ${line("K/D", recent.kd, null, false)}
+                </div>
+            </div>`;
     },
 
     renderOverview(profile) {
@@ -289,13 +405,29 @@ const player = {
         renderTable($("#tbl-overview"), ["Indicateur", "Valeur"], rows);
     },
 
-    renderWeapons(weapons) {
+    async renderWeapons(fallback) {
+        const headers = [
+            "Arme", "Categorie", "Kills", "Tirs", "Impacts", "Precision",
+            "Rang", "Balles/kill",
+        ];
+        let weapons = fallback;
+        try {
+            // L'endpoint dedie ajoute le classement de chaque arme dans sa
+            // propre categorie ; sans lui on affiche quand meme les chiffres.
+            const data = await api(`/api/players/${this.steamid}/weapons`);
+            weapons = data.weapons || fallback;
+        } catch {
+            /* Profil restreint : on garde les donnees deja chargees. */
+        }
+
         renderTable(
             $("#tbl-weapons"),
-            ["Arme", "Categorie", "Kills", "Tirs", "Impacts", "Precision", "Balles/kill"],
+            headers,
             weapons.map((w) => [
-                w.name, w.category, int(w.kills), int(w.shots_fired),
-                int(w.shots_hit), pct(w.accuracy), dec(w.shots_per_kill, 1),
+                w.name, w.category, int(w.kills), int(w.shots_fired), int(w.shots_hit),
+                pct(w.accuracy),
+                weaponRank(w.ranking),
+                dec(w.shots_per_kill, 1),
             ]),
             { emptyText: "Aucune statistique par arme sur ce profil." }
         );
@@ -331,20 +463,106 @@ const player = {
     async loadHistory() {
         try {
             const data = await api(`/api/players/${this.steamid}/history`);
+            const snapshots = data.snapshots || [];
             renderTable(
                 $("#tbl-history"),
                 ["Releve", "Kills", "Morts", "Manches", "K/D", "HS", "Precision"],
-                (data.snapshots || []).map((s) => [
+                snapshots.map((s) => [
                     shortDate(s.captured_at), int(s.kills), int(s.deaths), int(s.rounds_played),
                     dec(s.kd_ratio, 3), pct(s.headshot_rate), pct(s.accuracy),
                 ]),
                 { emptyText: "Premier releve enregistre. Reviens plus tard pour suivre la progression." }
             );
+            this.renderCharts(snapshots);
         } catch (error) {
             toast(error.message, "bad");
         }
     },
+
+    renderCharts(snapshots) {
+        const host = $("#player-charts");
+        // Les releves arrivent du plus recent au plus ancien : on remet dans
+        // l'ordre chronologique pour que les courbes se lisent de gauche a droite.
+        const ordered = [...snapshots].reverse();
+
+        if (ordered.length < 2) {
+            host.innerHTML = `
+                <p class="paste-help" style="grid-column:1/-1">
+                    Une seule mesure disponible. Consulte ce profil regulierement :
+                    chaque visite enregistre un releve, et les courbes apparaitront
+                    des le deuxieme.
+                </p>`;
+            return;
+        }
+
+        const series = [
+            { key: "kd_ratio", label: "Ratio K/D", color: "var(--flash)", asPercent: false },
+            { key: "headshot_rate", label: "Headshots", color: "var(--clean)", asPercent: true },
+            { key: "accuracy", label: "Precision", color: "var(--ct)", asPercent: true },
+        ];
+
+        host.innerHTML = series
+            .map((entry) => {
+                const values = ordered.map((s) => Number(s[entry.key]) || 0);
+                const current = values.at(-1);
+                const shown = entry.asPercent ? pct(current) : dec(current, 3);
+                return `
+                <div class="chart">
+                    <div class="chart-title">
+                        <span class="eyebrow">${entry.label}</span>
+                        <span class="chart-now" style="color:${entry.color}">${shown}</span>
+                    </div>
+                    ${sparkline(values, entry.color)}
+                    <div class="chart-foot">
+                        <span>${shortDate(ordered[0].captured_at)}</span>
+                        <span>${ordered.length} releves</span>
+                        <span>${shortDate(ordered.at(-1).captured_at)}</span>
+                    </div>
+                </div>`;
+            })
+            .join("");
+    },
 };
+
+/**
+ * Courbe compacte en SVG, sans aucune bibliotheque.
+ *
+ * L'echelle verticale est resserree autour des valeurs observees plutot que
+ * fixee a zero : sur des metriques qui varient de quelques pourcents, partir
+ * de zero ecraserait toute l'information.
+ */
+function sparkline(values, color) {
+    const W = 300;
+    const H = 96;
+    const PAD = 8;
+
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || Math.abs(max) || 1;
+    const lo = min - span * 0.15;
+    const hi = max + span * 0.15;
+
+    const x = (i) => PAD + (i / Math.max(1, values.length - 1)) * (W - PAD * 2);
+    const y = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - PAD * 2);
+
+    const points = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+    const line = `M${points.join(" L")}`;
+    const area = `${line} L${x(values.length - 1).toFixed(1)},${H - PAD} L${x(0).toFixed(1)},${H - PAD} Z`;
+
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    const meanY = y(mean).toFixed(1);
+    const lastX = x(values.length - 1).toFixed(1);
+    const lastY = y(values.at(-1)).toFixed(1);
+
+    return `
+        <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+             aria-label="Evolution sur ${values.length} releves">
+            <line class="chart-base" x1="${PAD}" y1="${meanY}" x2="${W - PAD}" y2="${meanY}"/>
+            <path class="chart-area" d="${area}" fill="${color}"/>
+            <path class="chart-line" d="${line}" stroke="${color}"/>
+            <circle class="chart-dot" cx="${lastX}" cy="${lastY}" r="3" fill="${color}"/>
+        </svg>`;
+}
 
 $("#player-search").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -497,6 +715,35 @@ const anticheat = {
         }
     },
 
+    async runPastedLobby() {
+        const text = $("#ac-paste-text").value.trim();
+        if (!text) {
+            toast("Colle d'abord la sortie de la commande status.", "bad");
+            return;
+        }
+        const button = $("#ac-paste-run");
+        button.disabled = true;
+        button.innerHTML = '<i class="spinner"></i>';
+        try {
+            const data = await api("/api/anticheat/lobby/paste", {
+                method: "POST",
+                body: { text, analyse: true },
+            });
+            if (!data.analysed) {
+                toast(data.message || "Aucun joueur exploitable dans ce collage.", "bad");
+                return;
+            }
+            this.renderLobby(data);
+            if (data.results?.length) this.render(data.results[0]);
+            toast(`${data.analysed} joueur(s) analyse(s) sur ${data.found} repere(s).`, "ok");
+        } catch (error) {
+            toast(error.message, "bad");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Analyser ces joueurs";
+        }
+    },
+
     async runLiveLobby() {
         const button = $("#ac-lobby");
         button.disabled = true;
@@ -607,6 +854,44 @@ $("#ac-search").addEventListener("submit", (event) => {
     anticheat.run($("#ac-query").value);
 });
 $("#ac-lobby").addEventListener("click", () => anticheat.runLiveLobby());
+
+$("#ac-toggle-paste").addEventListener("click", () => {
+    const zone = $("#ac-paste");
+    zone.hidden = !zone.hidden;
+    if (!zone.hidden) $("#ac-paste-text").focus();
+});
+
+$("#ac-paste-run").addEventListener("click", () => anticheat.runPastedLobby());
+
+// Compteur d'identifiants reperes, mis a jour pendant la saisie : l'utilisateur
+// voit immediatement si son collage est exploitable.
+$("#ac-paste-text").addEventListener("input", debounce(async (event) => {
+    const text = event.target.value.trim();
+    const label = $("#ac-paste-found");
+    if (text.length < 10) {
+        label.textContent = "";
+        return;
+    }
+    try {
+        const data = await api("/api/players/extract", {
+            method: "POST",
+            body: { text, analyse: false },
+        });
+        label.textContent = data.found
+            ? `${data.found} joueur(s) repere(s).`
+            : "Aucun identifiant repere pour l'instant.";
+    } catch {
+        label.textContent = "";
+    }
+}, 400));
+
+function debounce(fn, delay) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+    };
+}
 
 /* ------------------------------------------------------- page « temps reel » */
 

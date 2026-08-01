@@ -116,6 +116,9 @@ class PlayerFeatures:
     live_survival_rate: float = 0.0
     live_kill_intervals: int = 0
 
+    # --- évolution entre deux relevés ---------------------------------------
+    drift: Mapping[str, Any] | None = None
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "steamid": self.steamid,
@@ -217,16 +220,36 @@ def _account_age_days(profile: PlayerProfile) -> float:
 
 
 def build_features(
-    profile: PlayerProfile, live: LivePlayerMetrics | None = None
+    profile: PlayerProfile,
+    live: LivePlayerMetrics | None = None,
+    drift: Mapping[str, Any] | None = None,
 ) -> PlayerFeatures:
-    """Assemble les variables d'analyse depuis le profil Steam et le live."""
+    """Assemble les variables d'analyse depuis le profil, le live et l'historique."""
     stats = profile.stats
     account = profile.account
     bans = profile.bans
     summary = profile.summary
 
     steamid = str(profile.identity.get("steamid64", ""))
-    name = summary.persona_name if summary else (live.name if live else steamid)
+    if summary:
+        name = summary.persona_name
+    elif live:
+        name = live.name
+    else:
+        name = steamid
+
+    # Les heures Steam sont plus fiables que le compteur interne du jeu, qui
+    # peut avoir ete reinitialise ; on retombe sur ce dernier a defaut.
+    if account and account.cs2_hours > 0:
+        hours_played = account.cs2_hours
+    elif stats:
+        hours_played = stats.hours_played
+    else:
+        hours_played = 0.0
+
+    economy_banned = bool(
+        bans and bans.economy_ban and bans.economy_ban.lower() not in {"none", ""}
+    )
 
     total_kills = stats.total_kills if stats else 0
     total_shots = stats.total_shots_fired if stats else 0
@@ -257,10 +280,6 @@ def build_features(
         baselines.PRIOR_WEIGHT_SHOTS,
     )
 
-    spray_accuracy, spray_shots = (
-        _spray_aggregate(stats.weapons) if stats else (0.0, 0)
-    )
-
     return PlayerFeatures(
         steamid=steamid,
         name=name,
@@ -268,56 +287,104 @@ def build_features(
         has_live=live is not None and live.rounds_observed > 0,
         profile_public=bool(summary and summary.is_public),
         total_kills=total_kills,
-        total_deaths=stats.total_deaths if stats else 0,
         total_rounds=total_rounds,
         total_shots=total_shots,
-        total_hits=stats.total_shots_hit if stats else 0,
-        hours_played=(
-            account.cs2_hours
-            if account and account.cs2_hours > 0
-            else (stats.hours_played if stats else 0.0)
-        ),
+        hours_played=hours_played,
         account_age_days=_account_age_days(profile),
         headshot_rate=headshot_rate,
         accuracy=accuracy,
-        kd_ratio=stats.kd_ratio if stats else 0.0,
-        kills_per_round=stats.kills_per_round if stats else 0.0,
-        damage_per_round=stats.damage_per_round if stats else 0.0,
-        damage_per_kill=stats.damage_per_kill if stats else 0.0,
-        kills_per_hour=stats.kills_per_hour if stats else 0.0,
-        hits_per_kill=stats.hits_per_kill if stats else 0.0,
-        shots_per_kill=stats.shots_per_kill if stats else 0.0,
-        mvp_rate=stats.mvp_rate if stats else 0.0,
-        round_win_rate=stats.round_win_rate if stats else 0.0,
         kill_confidence=kill_confidence,
         shot_confidence=shot_confidence,
         round_confidence=round_confidence,
-        category_aim=_category_aim(stats.weapons) if stats else {},
-        spray_accuracy=spray_accuracy,
-        spray_shots=spray_shots,
-        weapon_headshot_rates=_weapon_headshot_rates(stats.raw) if stats else {},
-        steam_level=account.steam_level if account else 0,
-        games_owned=account.games_owned if account else 0,
-        friends_count=account.friends_count if account else 0,
-        badges_count=account.badges_count if account else 0,
-        cs2_share_of_playtime=account.cs2_share_of_playtime if account else 0.0,
         achievements_rate=profile.achievement_rate,
-        vac_bans=bans.number_of_vac_bans if bans else 0,
-        game_bans=bans.number_of_game_bans if bans else 0,
-        days_since_last_ban=bans.days_since_last_ban if bans else 0,
-        community_banned=bool(bans and bans.community_banned),
-        economy_banned=bool(
-            bans and bans.economy_ban and bans.economy_ban.lower() not in {"none", ""}
-        ),
-        live_rounds=live.rounds_observed if live else 0,
-        live_headshot_rate=live.live_headshot_rate if live else 0.0,
-        live_adr=live.adr if live else 0.0,
-        live_adr_variability=live.adr_variability if live else 0.0,
-        live_kills_per_round=live.kills_per_round if live else 0.0,
-        live_multi_kill_rate=live.multi_kill_rate if live else 0.0,
-        live_kill_interval_stdev=live.kill_interval_stdev if live else 0.0,
-        live_fast_chain_rate=live.fast_chain_rate if live else 0.0,
-        live_utility_per_round=live.utility_per_round if live else 0.0,
-        live_survival_rate=live.survival_rate if live else 0.0,
-        live_kill_intervals=len(live.all_kill_intervals) if live else 0,
+        economy_banned=economy_banned,
+        drift=drift,
+        **_stats_features(stats),
+        **_account_features(account),
+        **_ban_features(bans),
+        **_live_features(live),
     )
+
+
+def _stats_features(stats: Any) -> dict[str, Any]:
+    """Variables tirées des statistiques à vie ; zéros si elles manquent."""
+    if stats is None:
+        return {
+            "total_deaths": 0, "total_hits": 0, "kd_ratio": 0.0,
+            "kills_per_round": 0.0, "damage_per_round": 0.0, "damage_per_kill": 0.0,
+            "kills_per_hour": 0.0, "hits_per_kill": 0.0, "shots_per_kill": 0.0,
+            "mvp_rate": 0.0, "round_win_rate": 0.0,
+            "category_aim": {}, "spray_accuracy": 0.0, "spray_shots": 0,
+            "weapon_headshot_rates": {},
+        }
+    spray_accuracy, spray_shots = _spray_aggregate(stats.weapons)
+    return {
+        "total_deaths": stats.total_deaths,
+        "total_hits": stats.total_shots_hit,
+        "kd_ratio": stats.kd_ratio,
+        "kills_per_round": stats.kills_per_round,
+        "damage_per_round": stats.damage_per_round,
+        "damage_per_kill": stats.damage_per_kill,
+        "kills_per_hour": stats.kills_per_hour,
+        "hits_per_kill": stats.hits_per_kill,
+        "shots_per_kill": stats.shots_per_kill,
+        "mvp_rate": stats.mvp_rate,
+        "round_win_rate": stats.round_win_rate,
+        "category_aim": _category_aim(stats.weapons),
+        "spray_accuracy": spray_accuracy,
+        "spray_shots": spray_shots,
+        "weapon_headshot_rates": _weapon_headshot_rates(stats.raw),
+    }
+
+
+def _account_features(account: Any) -> dict[str, Any]:
+    if account is None:
+        return {
+            "steam_level": 0, "games_owned": 0, "friends_count": 0,
+            "badges_count": 0, "cs2_share_of_playtime": 0.0,
+        }
+    return {
+        "steam_level": account.steam_level,
+        "games_owned": account.games_owned,
+        "friends_count": account.friends_count,
+        "badges_count": account.badges_count,
+        "cs2_share_of_playtime": account.cs2_share_of_playtime,
+    }
+
+
+def _ban_features(bans: Any) -> dict[str, Any]:
+    if bans is None:
+        return {
+            "vac_bans": 0, "game_bans": 0, "days_since_last_ban": 0,
+            "community_banned": False,
+        }
+    return {
+        "vac_bans": bans.number_of_vac_bans,
+        "game_bans": bans.number_of_game_bans,
+        "days_since_last_ban": bans.days_since_last_ban,
+        "community_banned": bans.community_banned,
+    }
+
+
+def _live_features(live: LivePlayerMetrics | None) -> dict[str, Any]:
+    if live is None:
+        return {
+            "live_rounds": 0, "live_headshot_rate": 0.0, "live_adr": 0.0,
+            "live_adr_variability": 0.0, "live_kills_per_round": 0.0,
+            "live_multi_kill_rate": 0.0, "live_kill_interval_stdev": 0.0,
+            "live_fast_chain_rate": 0.0, "live_utility_per_round": 0.0,
+            "live_survival_rate": 0.0, "live_kill_intervals": 0,
+        }
+    return {
+        "live_rounds": live.rounds_observed,
+        "live_headshot_rate": live.live_headshot_rate,
+        "live_adr": live.adr,
+        "live_adr_variability": live.adr_variability,
+        "live_kills_per_round": live.kills_per_round,
+        "live_multi_kill_rate": live.multi_kill_rate,
+        "live_kill_interval_stdev": live.kill_interval_stdev,
+        "live_fast_chain_rate": live.fast_chain_rate,
+        "live_utility_per_round": live.utility_per_round,
+        "live_survival_rate": live.survival_rate,
+        "live_kill_intervals": len(live.all_kill_intervals),
+    }

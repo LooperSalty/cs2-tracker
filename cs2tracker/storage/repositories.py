@@ -164,21 +164,101 @@ class SnapshotRepository:
         rows = self.history(steamid64, limit=max(2, limit))
         if len(rows) < 2:
             return None
-        newest, previous = rows[0], rows[1]
-        delta_rounds = newest["rounds_played"] - previous["rounds_played"]
-        delta_kills = newest["kills"] - previous["kills"]
-        delta_deaths = newest["deaths"] - previous["deaths"]
+        return _delta_between(rows[1], rows[0])
+
+    def drift(self, steamid64: str, window: int = 6) -> dict[str, Any] | None:
+        """Compare la performance **récente** à l'historique du compte.
+
+        Les statistiques à vie noient la performance actuelle dans des milliers
+        d'heures : un joueur qui change brutalement de niveau reste invisible.
+        Le différentiel entre deux relevés isole au contraire la seule période
+        écoulée entre eux, et c'est là que se voit une rupture.
+
+        ``window`` borne le nombre de relevés considérés comme « récents ».
+        """
+        rows = self.history(steamid64, limit=max(2, window))
+        if len(rows) < 2:
+            return None
+
+        newest = rows[0]
+        oldest = rows[-1]
+        recent = _delta_between(oldest, newest)
+        if recent is None or not recent["rounds"]:
+            return None
+
+        # Référence : l'ensemble du compte tel qu'il était au relevé le plus ancien.
+        lifetime_kpr = _ratio(oldest["kills"], oldest["rounds_played"])
+        lifetime_hs = _ratio(oldest["headshot_kills"], oldest["kills"])
+        lifetime_accuracy = _ratio(oldest["shots_hit"], oldest["shots_fired"])
+
         return {
-            "from": previous["captured_at"],
+            "snapshots_used": len(rows),
+            "from": oldest["captured_at"],
             "to": newest["captured_at"],
-            "rounds": delta_rounds,
-            "kills": delta_kills,
-            "deaths": delta_deaths,
-            "kd": round(delta_kills / delta_deaths, 3) if delta_deaths else None,
-            "kills_per_round": (
-                round(delta_kills / delta_rounds, 3) if delta_rounds else None
-            ),
+            "recent": recent,
+            "lifetime_at_start": {
+                "kills_per_round": lifetime_kpr,
+                "headshot_rate": lifetime_hs,
+                "accuracy": lifetime_accuracy,
+            },
+            "delta": {
+                "kills_per_round": _gap(recent["kills_per_round"], lifetime_kpr),
+                "headshot_rate": _gap(recent["headshot_rate"], lifetime_hs),
+                "accuracy": _gap(recent["accuracy"], lifetime_accuracy),
+            },
         }
+
+
+def _ratio(numerator: Any, denominator: Any) -> float | None:
+    """Rapport de deux compteurs, ``None`` si le dénominateur est nul."""
+    try:
+        denominator = float(denominator)
+        if denominator <= 0:
+            return None
+        return round(float(numerator) / denominator, 5)
+    except (TypeError, ValueError):
+        return None
+
+
+def _gap(recent: float | None, lifetime: float | None) -> float | None:
+    if recent is None or lifetime is None:
+        return None
+    return round(recent - lifetime, 5)
+
+
+def _delta_between(
+    older: Mapping[str, Any], newer: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Différence entre deux relevés, exprimée en taux sur la période."""
+    rounds = newer["rounds_played"] - older["rounds_played"]
+    kills = newer["kills"] - older["kills"]
+    deaths = newer["deaths"] - older["deaths"]
+    headshots = newer["headshot_kills"] - older["headshot_kills"]
+    shots = newer["shots_fired"] - older["shots_fired"]
+    hits = newer["shots_hit"] - older["shots_hit"]
+    damage = newer["damage_done"] - older["damage_done"]
+
+    # Un compteur qui recule signale une remise a zero cote Valve : la periode
+    # n'est alors pas interpretable.
+    if min(rounds, kills, deaths, headshots, shots, hits, damage) < 0:
+        return None
+
+    return {
+        "from": older["captured_at"],
+        "to": newer["captured_at"],
+        "rounds": rounds,
+        "kills": kills,
+        "deaths": deaths,
+        "headshot_kills": headshots,
+        "shots_fired": shots,
+        "shots_hit": hits,
+        "damage": damage,
+        "kd": _ratio(kills, deaths),
+        "kills_per_round": _ratio(kills, rounds),
+        "headshot_rate": _ratio(headshots, kills),
+        "accuracy": _ratio(hits, shots),
+        "damage_per_round": _ratio(damage, rounds),
+    }
 
 
 class AnalysisRepository:

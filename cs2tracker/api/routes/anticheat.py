@@ -11,7 +11,8 @@ from cs2tracker.anticheat.engine import DISCLAIMER, analyse
 from cs2tracker.anticheat.report import to_compact_dict, to_text
 from cs2tracker.anticheat.weights import DEFAULT_CONFIG
 from cs2tracker.api.deps import ContextDep, SteamDep, SteamIdDep
-from cs2tracker.api.schemas import BatchAnalyseRequest, ok
+from cs2tracker.api.schemas import BatchAnalyseRequest, LobbyPasteRequest, ok
+from cs2tracker.core.steamid import extract_all
 from cs2tracker.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -82,10 +83,15 @@ async def analyse_player(
 ) -> dict:
     profile = await steam.get_full_profile(steamid)
     live = await context.live.raw_metrics(steamid) if use_live else None
-    result = analyse(profile, live)
+
+    # L'analyse ne peut mesurer une derive que si un releve anterieur existe :
+    # on enregistre le releve courant *apres* avoir lu l'historique.
+    drift = context.snapshots.drift(steamid)
+    result = analyse(profile, live, drift=drift)
 
     context.players.upsert_from_profile(profile)
     if persist:
+        context.snapshots.save(profile)
         context.analyses.save(result)
 
     return ok(result.as_dict(include_features=include_features))
@@ -97,7 +103,7 @@ async def text_report(
 ) -> dict:
     profile = await steam.get_full_profile(steamid)
     live = await context.live.raw_metrics(steamid)
-    result = analyse(profile, live)
+    result = analyse(profile, live, drift=context.snapshots.drift(steamid))
     return ok({"text": to_text(result), "verdict": result.verdict})
 
 
@@ -115,36 +121,83 @@ async def analysis_history(
     )
 
 
+async def _analyse_profiles(
+    profiles, context: ContextDep, *, use_live: bool, persist: bool
+) -> dict:
+    """Analyse un ensemble de profils deja charges et met en forme le lot."""
+
+    async def analyse_one(profile):
+        steamid = str(profile.identity.get("steamid64", ""))
+        live = await context.live.raw_metrics(steamid) if use_live else None
+        drift = context.snapshots.drift(steamid)
+        return analyse(profile, live, drift=drift)
+
+    results = await asyncio.gather(*(analyse_one(p) for p in profiles))
+    ordered = sorted(results, key=lambda r: r.suspicion_score, reverse=True)
+
+    if persist:
+        for profile, result in zip(profiles, results):
+            context.players.upsert_from_profile(profile)
+            context.snapshots.save(profile)
+            context.analyses.save(result)
+
+    return {
+        "analysed": len(ordered),
+        "results": [r.as_dict(include_features=False) for r in ordered],
+        "summary": [to_compact_dict(r) for r in ordered],
+        "disclaimer": DISCLAIMER,
+    }
+
+
 @router.post("/batch", summary="Analyser plusieurs joueurs (lobby)")
 async def analyse_batch(
     payload: BatchAnalyseRequest, context: ContextDep, steam: SteamDep
 ) -> dict:
     profiles = await steam.get_lobby_profiles(payload.players)
-
-    async def analyse_one(profile):
-        steamid = str(profile.identity.get("steamid64", ""))
-        live = (
-            await context.live.raw_metrics(steamid) if payload.use_live_data else None
-        )
-        return analyse(profile, live)
-
-    results = await asyncio.gather(*(analyse_one(p) for p in profiles))
-    ordered = sorted(results, key=lambda r: r.suspicion_score, reverse=True)
-
-    if payload.persist:
-        for profile, result in zip(profiles, results):
-            context.players.upsert_from_profile(profile)
-            context.analyses.save(result)
-
-    return ok(
-        {
-            "requested": len(payload.players),
-            "analysed": len(ordered),
-            "results": [r.as_dict(include_features=False) for r in ordered],
-            "summary": [to_compact_dict(r) for r in ordered],
-            "disclaimer": DISCLAIMER,
-        }
+    result = await _analyse_profiles(
+        profiles, context, use_live=payload.use_live_data, persist=payload.persist
     )
+    return ok({"requested": len(payload.players), **result})
+
+
+@router.post("/lobby/paste", summary="Analyser un lobby colle depuis la console CS2")
+async def analyse_pasted_lobby(
+    payload: LobbyPasteRequest, context: ContextDep, steam: SteamDep
+) -> dict:
+    """Analyse les joueurs reperes dans un collage de la commande ``status``.
+
+    En partie classique, CS2 ne transmet que ton propre etat par GSI : coller le
+    ``status`` de la console est le seul moyen d'obtenir les dix joueurs du
+    lobby. Le texte est balaye a la recherche des identifiants, quel que soit
+    son formatage exact.
+    """
+    identities = extract_all(payload.text, limit=12)
+    if not identities:
+        return ok(
+            {
+                "found": 0,
+                "analysed": 0,
+                "results": [],
+                "summary": [],
+                "message": (
+                    "Aucun identifiant Steam trouve. Ouvre la console CS2 (touche ~), "
+                    "tape `status`, puis colle toute la sortie ici."
+                ),
+            }
+        )
+
+    steamids = [str(identity.steamid64) for identity in identities]
+    if not payload.analyse:
+        return ok(
+            {
+                "found": len(identities),
+                "players": [identity.as_dict() for identity in identities],
+            }
+        )
+
+    profiles = await steam.get_lobby_profiles(steamids)
+    result = await _analyse_profiles(profiles, context, use_live=True, persist=True)
+    return ok({"found": len(identities), **result})
 
 
 @router.post("/lobby/live", summary="Analyser tous les joueurs vus en direct")
@@ -163,24 +216,7 @@ async def analyse_live_lobby(context: ContextDep, steam: SteamDep) -> dict:
         )
 
     profiles = await steam.get_lobby_profiles(steamids[:10])
-    results = []
-    for profile in profiles:
-        steamid = str(profile.identity.get("steamid64", ""))
-        live = await context.live.raw_metrics(steamid)
-        result = analyse(profile, live)
-        context.players.upsert_from_profile(profile)
-        context.analyses.save(result)
-        results.append(result)
-
-    ordered = sorted(results, key=lambda r: r.suspicion_score, reverse=True)
-    return ok(
-        {
-            "analysed": len(ordered),
-            "results": [r.as_dict(include_features=False) for r in ordered],
-            "summary": [to_compact_dict(r) for r in ordered],
-            "disclaimer": DISCLAIMER,
-        }
-    )
+    return ok(await _analyse_profiles(profiles, context, use_live=True, persist=True))
 
 
 @router.get("/leaderboard/suspicious", summary="Joueurs les plus suspects analyses")

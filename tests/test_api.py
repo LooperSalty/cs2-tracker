@@ -178,6 +178,57 @@ def test_gsi_preview_route(client):
     assert data["endpoint"].endswith("/gsi")
 
 
+# --- Import de lobby ----------------------------------------------------------
+STATUS_PASTE = """
+ id   name             steamid
+ 2    "Alpha"          [U:1:123456789]
+ 3    "Bravo"          STEAM_1:1:44444
+ 4    "Charlie"        76561198043717815
+"""
+
+
+def test_extract_finds_all_formats(client):
+    data = client.post(
+        "/api/players/extract", json={"text": STATUS_PASTE, "analyse": False}
+    ).json()["data"]
+    assert data["found"] == 3
+    assert all(len(p["steamid64"]) == 17 for p in data["players"])
+
+
+def test_extract_rejects_empty_text(client):
+    assert client.post("/api/players/extract", json={"text": "   "}).status_code == 422
+
+
+def test_extract_rejects_oversized_paste(client):
+    response = client.post("/api/players/extract", json={"text": "x" * 25_000})
+    assert response.status_code == 422
+
+
+def test_pasted_lobby_without_identifiers_explains_how(client):
+    data = client.post(
+        "/api/anticheat/lobby/paste", json={"text": "rien d'utile ici"}
+    ).json()["data"]
+    assert data["found"] == 0
+    assert "status" in data["message"]
+
+
+def test_pasted_lobby_extract_only_needs_no_steam_key(client):
+    data = client.post(
+        "/api/anticheat/lobby/paste", json={"text": STATUS_PASTE, "analyse": False}
+    ).json()["data"]
+    assert data["found"] == 3
+    assert len(data["players"]) == 3
+
+
+# --- Export -------------------------------------------------------------------
+def test_csv_export_has_header_even_when_empty(client):
+    response = client.get("/api/players/76561198000000001/export.csv")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment" in response.headers["content-disposition"]
+    assert response.text.splitlines()[0].startswith("captured_at;")
+
+
 # --- WebSocket ----------------------------------------------------------------
 def test_websocket_sends_initial_snapshot(client):
     with client.websocket_connect("/ws/live") as websocket:

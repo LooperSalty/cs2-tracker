@@ -23,6 +23,7 @@ class SignalCategory(str, Enum):
     PROGRESSION = "progression"
     LIVE = "temps_reel"
     CONSISTENCY = "regularite"
+    DRIFT = "evolution"
     BAN = "sanctions"
 
 

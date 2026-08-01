@@ -6,19 +6,36 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
+from fastapi.responses import PlainTextResponse
+
+from cs2tracker.anticheat.percentiles import rank_player, rank_weapon_accuracy
 from cs2tracker.api.deps import ContextDep, SteamDep, SteamIdDep, validate_query
 from cs2tracker.api.schemas import (
     FavouriteRequest,
+    LobbyPasteRequest,
     NotesRequest,
     SearchRequest,
     ok,
 )
 from cs2tracker.core.errors import PlayerNotFoundError
+from cs2tracker.core.steamid import extract_all
 from cs2tracker.steam.parsers import summarize_weapon_totals
 from cs2tracker.steam.service import describe_identity
 from cs2tracker.steam.weapons import favourite_weapon_name
 
 router = APIRouter(prefix="/api/players", tags=["joueurs"])
+
+
+def _profile_payload(profile, context: ContextDep, steamid: str) -> dict:
+    """Profil enrichi du classement dans la population et de l'evolution.
+
+    Les trois informations arrivent en une seule requete : l'interface affiche
+    ainsi la page complete sans cascade d'appels.
+    """
+    payload = profile.as_dict()
+    payload["percentiles"] = rank_player(profile.stats)
+    payload["drift"] = context.snapshots.drift(steamid) if steamid else None
+    return payload
 
 
 @router.get("/resolve/{query}", summary="Resoudre une identite Steam")
@@ -37,10 +54,10 @@ async def search(
     payload: SearchRequest, context: ContextDep, steam: SteamDep
 ) -> dict:
     profile = await steam.get_full_profile(payload.query)
-    context.players.upsert_from_profile(profile)
+    steamid = context.players.upsert_from_profile(profile)
     if context.settings.auto_snapshot:
         context.snapshots.save(profile)
-    return ok(profile.as_dict())
+    return ok(_profile_payload(profile, context, steamid))
 
 
 @router.get("/tracked", summary="Joueurs deja suivis localement")
@@ -50,6 +67,52 @@ async def tracked(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict:
     return ok(context.players.list_all(favourites_only=favourites_only, limit=limit))
+
+
+@router.post("/extract", summary="Extraire les SteamID d'un texte colle")
+async def extract_from_text(payload: LobbyPasteRequest) -> dict:
+    """Repere les identifiants Steam dans un collage libre.
+
+    Cible principale : la sortie de la commande ``status`` de la console CS2.
+    En partie classique, le jeu ne transmet que ton propre etat par GSI ; coller
+    le ``status`` est le seul moyen d'obtenir les dix joueurs du lobby.
+    """
+    identities = extract_all(payload.text)
+    return ok(
+        {
+            "found": len(identities),
+            "players": [identity.as_dict() for identity in identities],
+        }
+    )
+
+
+@router.get("/{steamid}/percentiles", summary="Position dans la population")
+async def percentiles(steamid: SteamIdDep, steam: SteamDep) -> dict:
+    """Classe chaque statistique du joueur par rapport a la population."""
+    stats = await steam.get_cs2_stats(steamid)
+    return ok(rank_player(stats))
+
+
+@router.get("/{steamid}/export.csv", summary="Exporter l'historique en CSV")
+async def export_csv(steamid: SteamIdDep, context: ContextDep) -> PlainTextResponse:
+    """Historique des releves au format CSV, ouvrable dans un tableur."""
+    snapshots = context.snapshots.history(steamid, limit=1_000)
+    columns = [
+        "captured_at", "kills", "deaths", "rounds_played", "matches_played",
+        "matches_won", "time_played", "headshot_kills", "shots_fired",
+        "shots_hit", "damage_done", "mvps", "kd_ratio", "headshot_rate", "accuracy",
+    ]
+    lines = [";".join(columns)]
+    for snapshot in reversed(snapshots):
+        lines.append(";".join(str(snapshot.get(column, "")) for column in columns))
+
+    return PlainTextResponse(
+        "\n".join(lines),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="cs2tracker-{steamid}.csv"'
+        },
+    )
 
 
 @router.get("/{steamid}", summary="Profil complet d'un joueur")
@@ -63,7 +126,7 @@ async def profile(
     context.players.upsert_from_profile(result)
     if snapshot and context.settings.auto_snapshot:
         context.snapshots.save(result)
-    return ok(result.as_dict())
+    return ok(_profile_payload(result, context, steamid))
 
 
 @router.get("/{steamid}/summary", summary="Resume de profil Steam")
@@ -100,7 +163,17 @@ async def weapons(steamid: SteamIdDep, steam: SteamDep) -> dict:
         raise PlayerNotFoundError(f"Aucune statistique d'arme pour {steamid}")
     return ok(
         {
-            "weapons": [w.as_dict() for w in result.weapons],
+            "weapons": [
+                {
+                    **weapon.as_dict(),
+                    # Chaque arme est comparee a sa propre categorie : une
+                    # precision d'AWP n'a rien a voir avec celle d'une SMG.
+                    "ranking": rank_weapon_accuracy(
+                        weapon.key, weapon.accuracy, weapon.category
+                    ),
+                }
+                for weapon in result.weapons
+            ],
             "aggregate": summarize_weapon_totals(result.weapons),
         }
     )
@@ -190,6 +263,7 @@ async def history(
         {
             "snapshots": context.snapshots.history(steamid, limit=limit),
             "progression": context.snapshots.progression(steamid),
+            "drift": context.snapshots.drift(steamid),
             "matches": context.matches.player_history(steamid, limit=50),
         }
     )

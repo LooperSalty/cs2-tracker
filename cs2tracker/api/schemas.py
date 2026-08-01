@@ -68,6 +68,27 @@ class FavouriteRequest(BaseModel):
     favourite: bool = True
 
 
+#: Un collage de console CS2 tient largement dans cette limite.
+MAX_PASTE_LENGTH = 20_000
+
+
+class LobbyPasteRequest(BaseModel):
+    """Texte libre collé depuis la console CS2 (commande ``status``)."""
+
+    text: str = Field(..., min_length=1, max_length=MAX_PASTE_LENGTH)
+    analyse: bool = Field(
+        default=True, description="Analyser les joueurs trouves, pas seulement les extraire"
+    )
+
+    @field_validator("text")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Le texte colle est vide")
+        return cleaned
+
+
 class SteamKeyRequest(BaseModel):
     """Une clé Steam est une chaîne hexadécimale de 32 caractères."""
 

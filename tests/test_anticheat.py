@@ -209,6 +209,76 @@ def test_perfectly_regular_damage_flags_consistency(average_profile):
     assert signal.score > 0.5
 
 
+# --- Dérive entre deux relevés ------------------------------------------------
+def _drift(*, recent_hs: float, lifetime_hs: float, rounds: int = 600) -> dict:
+    return {
+        "snapshots_used": 2,
+        "from": "2026-07-01T00:00:00Z",
+        "to": "2026-08-01T00:00:00Z",
+        "recent": {
+            "rounds": rounds,
+            "kills": int(rounds * 0.62),
+            "headshot_rate": recent_hs,
+            "accuracy": 0.21,
+            "kills_per_round": 0.62,
+        },
+        "lifetime_at_start": {
+            "headshot_rate": lifetime_hs,
+            "accuracy": 0.205,
+            "kills_per_round": 0.62,
+        },
+        "delta": {
+            "headshot_rate": recent_hs - lifetime_hs,
+            "accuracy": 0.005,
+            "kills_per_round": 0.0,
+        },
+    }
+
+
+def test_stable_player_shows_no_drift(average_profile):
+    result = analyse(average_profile, drift=_drift(recent_hs=0.46, lifetime_hs=0.45))
+    signal = next(s for s in result.signals if s.key == "drift.headshot_rate")
+    assert signal.score < 0.25
+
+
+def test_sudden_headshot_jump_is_flagged(average_profile):
+    """45 % → 78 % de headshots entre deux relevés : rupture nette."""
+    result = analyse(average_profile, drift=_drift(recent_hs=0.78, lifetime_hs=0.45))
+    signal = next(s for s in result.signals if s.key == "drift.headshot_rate")
+    assert signal.score > 0.7
+    assert signal.confidence > 0.5
+    assert "bond" in signal.explanation.lower()
+
+
+def test_drift_is_not_explained_by_smurfing(average_profile):
+    result = analyse(average_profile, drift=_drift(recent_hs=0.80, lifetime_hs=0.45))
+    signal = next(s for s in result.signals if s.key == "drift.headshot_rate")
+    assert signal.metadata.get("explains_away_smurf") is True
+
+
+def test_drift_needs_enough_recent_rounds(average_profile):
+    result = analyse(
+        average_profile, drift=_drift(recent_hs=0.90, lifetime_hs=0.45, rounds=12)
+    )
+    signal = next(s for s in result.signals if s.key == "drift.headshot_rate")
+    assert signal.confidence == 0.0
+
+
+def test_missing_drift_is_neutral(average_profile):
+    result = analyse(average_profile)
+    signal = next(s for s in result.signals if s.key == "drift.headshot_rate")
+    assert signal.confidence == 0.0
+    assert signal.score == 0.0
+
+
+def test_drift_raises_the_score(average_profile):
+    without = analyse(average_profile).suspicion_score
+    with_drift = analyse(
+        average_profile, drift=_drift(recent_hs=0.82, lifetime_hs=0.45)
+    ).suspicion_score
+    assert with_drift > without
+
+
 # --- Lots et rapports ---------------------------------------------------------
 def test_analyse_many_sorts_by_score(average_profile, blatant_profile):
     results = analyse_many([average_profile, blatant_profile])

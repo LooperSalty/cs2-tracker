@@ -9,6 +9,7 @@ from cs2tracker.anticheat.detectors import (
     aim,
     bans,
     consistency,
+    drift,
     live_behavior,
     progression,
     weapon_profile,
@@ -28,6 +29,7 @@ ALL_DETECTORS: Final[tuple[tuple[str, DetectorFn], ...]] = (
     ("compte", account.detect),
     ("temps_reel", live_behavior.detect),
     ("regularite", consistency.detect),
+    ("evolution", drift.detect),
 )
 
 __all__ = [
@@ -37,6 +39,7 @@ __all__ = [
     "aim",
     "bans",
     "consistency",
+    "drift",
     "live_behavior",
     "progression",
     "weapon_profile",

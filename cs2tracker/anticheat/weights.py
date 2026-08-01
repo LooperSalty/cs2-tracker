@@ -49,6 +49,13 @@ DETECTOR_WEIGHTS: Final[dict[str, float]] = {
     # --- Régularité ----------------------------------------------------------
     "consistency.adr_variability": 1.6,
     "consistency.stats_vs_live": 1.5,
+    # --- Évolution dans le temps --------------------------------------------
+    # Poids élevés : une rupture de niveau est le signal le plus *spécifique*
+    # du moteur. Un smurf ou un joueur pro est bon dès le premier relevé ; un
+    # bond soudain, lui, ne s'explique pas par un compte secondaire.
+    "drift.headshot_rate": 2.8,
+    "drift.accuracy": 2.4,
+    "drift.kills_per_round": 1.8,
 }
 
 

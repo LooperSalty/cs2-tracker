@@ -15,7 +15,7 @@ Principes de conception, volontairement conservateurs :
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from cs2tracker.anticheat.detectors import ALL_DETECTORS, bans as bans_detector
 from cs2tracker.anticheat.features import PlayerFeatures, build_features
@@ -175,9 +175,15 @@ def analyse(
     profile: PlayerProfile,
     live: LivePlayerMetrics | None = None,
     config: EngineConfig = DEFAULT_CONFIG,
+    drift: Mapping[str, Any] | None = None,
 ) -> AnalysisResult:
-    """Exécute tous les détecteurs et agrège leurs signaux en un verdict."""
-    features = build_features(profile, live)
+    """Exécute tous les détecteurs et agrège leurs signaux en un verdict.
+
+    ``drift`` est le différentiel entre deux relevés de statistiques (voir
+    ``SnapshotRepository.drift``) : il permet de mesurer une rupture de niveau
+    récente, invisible dans les statistiques à vie.
+    """
+    features = build_features(profile, live, drift)
 
     signals: list[Signal] = []
     for _name, detector in ALL_DETECTORS:
