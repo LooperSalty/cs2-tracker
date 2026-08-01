@@ -25,11 +25,14 @@ heuristique et explicable.
 |---|---|
 | **Profil complet** | Identité (SteamID64/2/3), ancienneté, niveau, amis, bibliothèque, succès |
 | **Statistiques à vie** | Kills, précision, headshots, dégâts, MVP, manches — par arme et par carte |
+| **Classement** | Chaque statistique replacée dans la population : « top 8 % », « Excellent » |
 | **Temps réel** | Score, manche, phase, bombe, tableau des scores, flux d'événements |
+| **Overlay en jeu** | Panneau natif par-dessus CS2, sans injection ([`overlay/`](overlay/)) |
 | **Sanctions** | Bannissements VAC et éditeur, ancienneté, restrictions communautaires |
 | **Anti-triche** | Score de suspicion 0–100 avec le détail de chaque indicateur |
-| **Historique** | Relevés de statistiques dans le temps, matchs archivés automatiquement |
-| **API REST** | ~35 endpoints documentés, ouverts à vos propres outils |
+| **Import de lobby** | Colle un `status` de la console CS2 pour analyser les 10 joueurs |
+| **Historique** | Relevés horodatés, courbes d'évolution, détection de rupture de niveau |
+| **API REST** | ~40 endpoints documentés, ouverts à vos propres outils |
 
 ---
 
@@ -137,7 +140,14 @@ distributions de référence. Trois garde-fous rendent le moteur conservateur :
 | **Compte** | Ancienneté, confidentialité, bibliothèque, empreinte sociale |
 | **Temps réel** | HS observés, ADR, multi-kills, rythme des éliminations, utilitaires |
 | **Régularité** | Variabilité des dégâts, cohérence historique vs partie en cours |
+| **Évolution** | Rupture de niveau entre deux relevés — le signal le plus spécifique |
 | **Sanctions** | Bannissements VAC et éditeur (factuel, non statistique) |
+
+> **Pourquoi l'évolution compte.** Un joueur avec 80 000 manches au compteur peut
+> doubler son taux de headshots sur ses 500 manches suivantes sans que sa moyenne
+> à vie bouge d'un point. Comparer deux relevés isole la période récente — et
+> contrairement à tous les autres signaux, un bond soudain ne s'explique **pas**
+> par un compte secondaire : un smurf est bon dès le premier relevé.
 
 ### Échelle
 

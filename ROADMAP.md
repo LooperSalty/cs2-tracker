@@ -5,6 +5,19 @@ réellement, pas seulement ce que ça ajoute.
 
 ---
 
+## ✅ Livré depuis la version 1.0
+
+| Fonctionnalité | Ce que ça a apporté |
+|---|---|
+| **Percentiles** | Chaque statistique replacée dans la population, via la loi normale appliquée aux baselines existantes — aucune donnée supplémentaire nécessaire |
+| **Dérive temporelle** | Détecteur de rupture de niveau entre deux relevés : le seul signal qu'un compte secondaire n'explique pas |
+| **Import de lobby** | Contourne la limite du GSI en partie classique, où seul l'état du joueur local est transmis |
+| **Courbes d'évolution** | Suivi K/D, HS %, précision dans le temps, en SVG sans dépendance |
+| **Export CSV** | Historique ouvrable dans un tableur |
+| **Overlay natif** | Panneau C++ par-dessus le jeu, sans injection ni hook ([`overlay/`](overlay/)) |
+
+---
+
 ## 1. Ce qui rendrait la détection nettement meilleure
 
 ### 1.1 Analyse de démos `.dem` — *le plus gros gain possible*
@@ -41,18 +54,7 @@ moyenne globale sera toujours signalé. Comparé à sa propre population, non.
 
 **Effort** : moyen. **Valeur** : élevée — réduit directement les faux positifs.
 
-### 1.3 Détection de dérive temporelle
-
-Aujourd'hui les relevés sont stockés mais peu exploités. Un joueur qui passe de
-45 % à 70 % de headshots **entre deux relevés** est un signal bien plus fort
-qu'un taux élevé constant (qui peut n'être qu'un bon joueur).
-
-Le différentiel entre deux `stat_snapshots` isole la performance *récente*, là
-où les statistiques à vie la noient dans des milliers d'heures.
-
-**Effort** : faible — les données sont déjà là. **Valeur** : élevée.
-
-### 1.4 Calibration adverse
+### 1.3 Calibration adverse
 
 Constituer deux jeux d'évaluation — profils VAC-bannis confirmés d'un côté,
 profils de joueurs pros de l'autre — et mesurer le taux de vrais/faux positifs.
@@ -67,17 +69,18 @@ fonctionne.
 
 | Idée | Détail | Effort |
 |---|---|---|
-| **Overlay en jeu** | Fenêtre transparente toujours au-dessus avec le HUD et les scores de suspicion du lobby | moyen |
-| **Import de lobby** | Coller le résultat de `status` depuis la console CS2 pour analyser les 10 joueurs d'un coup | **faible** |
+| **FACEIT** | ELO, niveau, taux de victoire et matchs récents. L'API FACEIT est publique et gratuite (clé requise) — c'est le seul classement compétitif réellement accessible | moyen |
 | **Comparaison de joueurs** | Deux profils côte à côte, écarts mis en évidence | faible |
-| **Graphiques d'évolution** | Courbes K/D, HS%, précision dans le temps (SVG, sans dépendance) | faible |
-| **Export** | Rapport PDF/PNG partageable, export CSV des relevés | faible |
 | **Suivi de watchlist** | Alerte quand un joueur surveillé se fait bannir | faible |
-| **Statistiques Premier / rang** | Le classement CS2 n'est pas exposé par l'API Steam — nécessiterait le protocole GC | élevé |
+| **Analyse de l'inventaire** | Valeur des skins : un compte jetable en est généralement dépourvu | faible |
+| **Export d'un rapport** | PDF/PNG partageable en complément du CSV | faible |
 | **Multi-langue** | L'interface est en français uniquement | faible |
+| **Rang Premier / par carte** | Le classement CS2 n'est **pas** exposé par l'API Steam. Il faudrait dialoguer avec le Game Coordinator via un compte Steam connecté — lourd et fragile | élevé |
+| **Overlay : ancrage sur la fenêtre CS2** | Aujourd'hui l'overlay se place par rapport à l'écran ; le suivre la fenêtre du jeu gérerait mieux le multi-écran | faible |
 
-L'**import de lobby** est le meilleur premier ajout : effort minimal, et il
-contourne exactement la limite du GSI en partie classique.
+**FACEIT** est le meilleur prochain ajout côté données : c'est la seule source
+de classement compétitif accessible sans bricolage, et elle apporte un contexte
+que les statistiques Steam à vie ne donnent pas (niveau réel de l'adversaire).
 
 ---
 
@@ -118,40 +121,43 @@ contourne exactement la limite du GSI en partie classique.
 
 ---
 
-## 4. Sur la réécriture en C++
+## 4. La part de C++ — décision prise
 
-Le besoin exprimé était « un exe facile à installer ». **C'est déjà le cas** :
-`CS2Tracker.exe` fait 26 Mo, ne demande ni Python ni dépendance, et démarre
-directement.
+Le besoin initial était « un exe facile à installer ». Il est réglé sans C++ :
+`CS2Tracker.exe` fait 26 Mo, ne demande ni Python ni dépendance.
 
-Ce qu'une réécriture C++ apporterait réellement :
+Comparaison honnête d'une réécriture complète :
 
 | Aspect | Python actuel | C++ |
 |---|---|---|
 | Taille | 26 Mo | ~5–10 Mo |
 | Démarrage | ~1,5 s | ~0,2 s |
 | Mémoire | ~80 Mo | ~20 Mo |
-| Overlay en jeu | difficile | natif (Direct3D) |
-| Parsing de démos | correct | nettement plus rapide |
-| Coût de développement | — | **plusieurs semaines** |
+| Coût | — | **plusieurs semaines**, et perte des 126 tests |
 
-Aucun de ces gains n'est perceptible pour un outil qui tourne à côté d'un jeu
-consommant 4 Go. Les deux seuls arguments sérieux sont **l'overlay Direct3D** et
-le **parsing de démos à grande échelle**.
+Aucun de ces gains n'est perceptible à côté d'un jeu qui consomme 4 Go.
 
-**Chemin intermédiaire recommandé** : garder le cœur en Python et n'écrire en
-C++ que le composant qui en tire un bénéfice réel — un overlay Direct3D qui
-consomme l'API existante. On garde toute la logique déjà testée, on gagne la
-seule chose que le C++ apporte vraiment.
+**Ce qui a été retenu** : garder le cœur en Python et n'écrire en C++ que le
+composant qui en tire un bénéfice réel — l'**overlay**, seule chose que Python
+ne pouvait pas faire correctement. Il est livré : 219 Ko, sans dépendance, et il
+consomme l'API existante.
+
+Point de conception non négociable : l'overlay **n'injecte rien** dans CS2.
+Hooker Direct3D aurait donné plus de souplesse (affichage en plein écran
+exclusif, notamment) mais aurait rendu le programme indiscernable d'un logiciel
+de triche du point de vue d'un anti-cheat. Le compromis retenu est une fenêtre
+Win32 superposée, avec sa contrainte assumée : CS2 doit tourner en plein écran
+fenêtre.
 
 ---
 
 ## 5. Priorités suggérées
 
-1. **Import de lobby** — contourne la limite du GSI, effort minimal
-2. **WebSocket dans l'interface** — le code serveur existe déjà
-3. **Dérive temporelle** — les données sont déjà stockées
-4. **CI + signature de l'exe** — supprime la friction d'installation
-5. **Calibration des références** — réduit les faux positifs
-6. **Analyse de démos** — le vrai saut qualitatif
-7. **Overlay** — en C++ si l'ambition est là
+1. ~~Import de lobby~~ — **fait**
+2. ~~Dérive temporelle~~ — **fait**
+3. ~~Overlay~~ — **fait**
+4. **WebSocket dans l'interface** — le code serveur existe déjà, le front continue de sonder
+5. **CI + signature de l'exe** — supprime l'avertissement SmartScreen
+6. **FACEIT** — le seul classement compétitif réellement accessible
+7. **Calibration des références** — réduit les faux positifs
+8. **Analyse de démos** — le vrai saut qualitatif, et un projet en soi

@@ -18,6 +18,14 @@ build/
 dist/
 *.spec.bak
 
+# Build C++ de l'overlay
+overlay/build/
+*.obj
+*.pdb
+*.ilk
+*.vcxproj*
+*.sln
+
 # Donnees locales
 *.db
 *.db-wal
