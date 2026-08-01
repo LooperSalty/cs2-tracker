@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CS2 Tracker</title>
+<link rel="stylesheet" href="/app/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230b0e13'/><rect x='7' y='2' width='2' height='12' fill='%23ff6a3d'/><rect x='2' y='7' width='12' height='2' fill='%23ff6a3d'/></svg>">
+</head>
+<body>
+
+<div class="shell">
+    <!-- ------------------------------------------------------------- rail -->
+    <aside class="rail">
+        <div class="brand">
+            <div class="brand-mark">CS2 TRACKER</div>
+            <div class="brand-sub eyebrow">Stats · Direct · Analyse</div>
+        </div>
+
+        <nav class="nav" aria-label="Sections">
+            <button class="nav-item" data-page="player" aria-current="page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+                <span>Joueur</span>
+            </button>
+            <button class="nav-item" data-page="live">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
+                <span>Partie en direct</span>
+            </button>
+            <button class="nav-item" data-page="anticheat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l7.5 3v6c0 4.5-3 8-7.5 9.5C7.5 20 4.5 16.5 4.5 12V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg>
+                <span>Anti-triche</span>
+            </button>
+            <button class="nav-item" data-page="matches">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg>
+                <span>Matchs</span>
+            </button>
+            <button class="nav-item" data-page="settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+                <span>Configuration</span>
+            </button>
+        </nav>
+
+        <div class="rig">
+            <div class="eyebrow" style="margin-bottom:8px">Liaison</div>
+            <div class="rig-row"><i class="dot" id="rig-steam"></i><span>API Steam</span></div>
+            <div class="rig-row"><i class="dot" id="rig-cs2"></i><span>CS2 detecte</span></div>
+            <div class="rig-row"><i class="dot" id="rig-gsi"></i><span>Flux temps reel</span></div>
+        </div>
+    </aside>
+
+    <main class="stage">
+
+        <!-- ------------------------------------------------------- joueur -->
+        <section class="page active" id="page-player">
+            <header class="page-head">
+                <h1>Joueur</h1>
+                <p>Cherche par SteamID64, SteamID2/3, URL de profil ou pseudo personnalise. Les statistiques proviennent de l'API publique Steam.</p>
+            </header>
+
+            <form class="search" id="player-search">
+                <input class="field" id="player-query" autocomplete="off" spellcheck="false"
+                       placeholder="76561198000000000 · STEAM_1:0:12345 · steamcommunity.com/id/pseudo">
+                <button class="btn go" type="submit">Chercher</button>
+                <button class="btn" type="button" id="player-analyse" disabled>Analyser ce joueur</button>
+            </form>
+
+            <div id="player-body" hidden>
+                <div class="identity">
+                    <img class="avatar" id="player-avatar" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
+                    <div class="identity-main">
+                        <h2 id="player-name">—</h2>
+                        <div class="identity-ids" id="player-ids"></div>
+                        <div class="identity-meta" id="player-meta"></div>
+                    </div>
+                    <div class="tags" id="player-tags"></div>
+                </div>
+
+                <div class="strip" id="player-strip"></div>
+
+                <div class="tabs" role="tablist">
+                    <button class="tab" role="tab" aria-selected="true" data-panel="overview">Vue d'ensemble</button>
+                    <button class="tab" role="tab" aria-selected="false" data-panel="weapons">Armes</button>
+                    <button class="tab" role="tab" aria-selected="false" data-panel="maps">Cartes</button>
+                    <button class="tab" role="tab" aria-selected="false" data-panel="library">Bibliotheque</button>
+                    <button class="tab" role="tab" aria-selected="false" data-panel="history">Historique</button>
+                </div>
+
+                <div class="panel active" data-panel="overview"><div class="table-wrap"><table class="data-table" id="tbl-overview"></table></div></div>
+                <div class="panel" data-panel="weapons"><div class="table-wrap"><table class="data-table" id="tbl-weapons"></table></div></div>
+                <div class="panel" data-panel="maps"><div class="table-wrap"><table class="data-table" id="tbl-maps"></table></div></div>
+                <div class="panel" data-panel="library"><div class="table-wrap"><table class="data-table" id="tbl-library"></table></div></div>
+                <div class="panel" data-panel="history"><div class="table-wrap"><table class="data-table" id="tbl-history"></table></div></div>
+            </div>
+
+            <div class="empty" id="player-empty">
+                <strong>Aucun joueur charge</strong>
+                Colle un identifiant Steam ci-dessus pour voir son profil complet.
+            </div>
+        </section>
+
+        <!-- -------------------------------------------------------- direct -->
+        <section class="page" id="page-live">
+            <header class="page-head">
+                <h1>Partie en direct</h1>
+                <p>Le jeu envoie lui-meme son etat via le Game State Integration officiel de Valve. Les donnees de tous les joueurs n'arrivent qu'en mode spectateur ou sur une retransmission GOTV.</p>
+            </header>
+
+            <div class="hud">
+                <div class="hud-score">
+                    <span class="hud-team ct" id="live-ct">0</span>
+                    <span class="hud-sep">:</span>
+                    <span class="hud-team t" id="live-t">0</span>
+                </div>
+                <div>
+                    <div class="hud-map" id="live-map">En attente du jeu</div>
+                    <div class="hud-mode" id="live-mode">Lance CS2 avec la configuration installee.</div>
+                </div>
+                <div class="hud-right">
+                    <span class="hud-chip">Manche <b id="live-round">—</b></span>
+                    <span class="hud-chip">Phase <b id="live-phase">—</b></span>
+                    <span class="hud-chip" id="live-bomb-chip" hidden>Bombe <b id="live-bomb">—</b></span>
+                    <button class="btn" id="live-analyse">Analyser le lobby</button>
+                </div>
+            </div>
+
+            <div class="rounds" id="live-rounds"></div>
+
+            <div class="live-split">
+                <div class="live-main">
+                    <div class="eyebrow" style="margin-bottom:10px">Tableau des scores</div>
+                    <div class="table-wrap"><table class="data-table" id="tbl-scoreboard"></table></div>
+                    <p style="color:var(--dust);font-size:11.5px;margin-top:12px">
+                        Clique sur une ligne pour analyser ce joueur.
+                    </p>
+                </div>
+                <div class="live-side">
+                    <div class="eyebrow" style="margin-bottom:10px">Evenements</div>
+                    <ul class="feed" id="live-feed"></ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ---------------------------------------------------- anti-triche -->
+        <section class="page" id="page-anticheat">
+            <header class="page-head">
+                <h1>Anti-triche</h1>
+                <p>Un score de suspicion explicable, calcule sur des donnees publiques. Ce n'est pas une preuve : seul Valve peut trancher.</p>
+            </header>
+
+            <form class="search" id="ac-search">
+                <input class="field" id="ac-query" autocomplete="off" spellcheck="false"
+                       placeholder="SteamID64 — separe par des virgules pour comparer plusieurs joueurs">
+                <button class="btn go" type="submit">Analyser</button>
+                <button class="btn" type="button" id="ac-lobby">Lobby en direct</button>
+            </form>
+
+            <div id="ac-body" hidden>
+                <div class="verdict-layout">
+                    <div>
+                        <div class="eyebrow" style="margin-bottom:12px">Ecart a la population</div>
+                        <div class="scatter" id="ac-scatter"></div>
+                        <p class="scatter-caption">
+                            Chaque point est un indicateur. Sa distance au centre est son ecart-type par
+                            rapport a un joueur moyen ; sa direction indique la famille d'indicateurs.
+                            Un profil ordinaire reste groupe au centre.
+                        </p>
+                    </div>
+
+                    <div>
+                        <div class="gauge">
+                            <span class="gauge-score" id="ac-score">—</span>
+                            <span class="gauge-max">/ 100</span>
+                            <span class="tag gauge-verdict" id="ac-verdict">EN ATTENTE</span>
+                        </div>
+                        <div class="meter"><span id="ac-meter"></span></div>
+                        <div class="verdict-line" id="ac-line">Lance une analyse pour obtenir un verdict.</div>
+
+                        <div class="advice" id="ac-advice" hidden>
+                            <span class="eyebrow">Que faire</span>
+                            <span id="ac-advice-text"></span>
+                        </div>
+
+                        <div class="signals" id="ac-signals"></div>
+                    </div>
+                </div>
+
+                <div class="disclaimer" id="ac-disclaimer"></div>
+            </div>
+
+            <div id="ac-lobby-body" hidden>
+                <div class="eyebrow" style="margin:22px 0 10px">Comparatif du lobby</div>
+                <div class="table-wrap"><table class="data-table" id="tbl-lobby"></table></div>
+            </div>
+
+            <div class="empty" id="ac-empty">
+                <strong>Aucune analyse</strong>
+                Saisis un SteamID64, ou analyse d'un coup tous les joueurs vus en direct.
+            </div>
+        </section>
+
+        <!-- -------------------------------------------------------- matchs -->
+        <section class="page" id="page-matches">
+            <header class="page-head">
+                <h1>Matchs</h1>
+                <p>Chaque partie suivie en direct est archivee ici : score, deroule des manches et statistiques par joueur.</p>
+            </header>
+
+            <div class="table-wrap"><table class="data-table" id="tbl-matches"></table></div>
+
+            <div id="match-detail" hidden>
+                <div class="live-split" style="margin-top:26px">
+                    <div class="live-main">
+                        <div class="eyebrow" style="margin-bottom:10px">Joueurs</div>
+                        <div class="table-wrap"><table class="data-table" id="tbl-match-players"></table></div>
+                    </div>
+                    <div class="live-side">
+                        <div class="eyebrow" style="margin-bottom:10px">Manches</div>
+                        <div class="table-wrap"><table class="data-table" id="tbl-match-rounds"></table></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="empty" id="matches-empty">
+                <strong>Aucun match enregistre</strong>
+                Lance CS2 avec la liaison temps reel active : les parties s'archivent toutes seules.
+            </div>
+        </section>
+
+        <!-- ------------------------------------------------------ reglages -->
+        <section class="page" id="page-settings">
+            <header class="page-head">
+                <h1>Configuration</h1>
+                <p>Cle API Steam, liaison avec le jeu et diagnostic de l'installation.</p>
+            </header>
+
+            <div class="setting">
+                <h3>Cle API Steam</h3>
+                <p>Necessaire pour lire les profils et les statistiques. Elle s'obtient gratuitement sur
+                   <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a>.
+                   Elle est stockee dans le fichier <code>.env</code> local et n'est envoyee qu'a Steam.</p>
+                <div class="setting-row">
+                    <input class="field" id="steam-key" type="password" autocomplete="off" placeholder="Colle ta cle ici">
+                    <button class="btn go" id="save-key">Enregistrer</button>
+                </div>
+            </div>
+
+            <div class="setting">
+                <h3>Liaison temps reel</h3>
+                <p>Ecrit <code>gamestate_integration_cs2tracker.cfg</code> dans le dossier de configuration de CS2.
+                   C'est le mecanisme officiel de Valve : le jeu pousse son etat vers cette application. Redemarre CS2 apres l'installation.</p>
+                <div class="setting-row">
+                    <label style="color:var(--ash);font-size:12.5px">Cadence d'envoi</label>
+                    <input class="field" id="gsi-throttle" type="number" min="0.01" max="5" step="0.05" value="0.1" style="width:90px;flex:0 0 90px">
+                    <span style="color:var(--dust);font-size:12px">seconde(s)</span>
+                    <button class="btn go" id="install-gsi">Installer</button>
+                    <button class="btn quiet" id="preview-gsi">Voir le fichier</button>
+                    <button class="btn quiet" id="remove-gsi">Retirer</button>
+                </div>
+                <pre class="code-out" id="gsi-out" hidden></pre>
+            </div>
+
+            <div class="setting">
+                <h3>Diagnostic</h3>
+                <p>Etat courant des composants et de la base locale.</p>
+                <div class="setting-row" style="margin-bottom:14px">
+                    <button class="btn quiet" id="refresh-status">Actualiser</button>
+                    <button class="btn quiet" id="clear-cache">Vider le cache Steam</button>
+                </div>
+                <div class="table-wrap"><table class="data-table" id="tbl-status"></table></div>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script src="/app/app.js"></script>
+</body>
+</html>

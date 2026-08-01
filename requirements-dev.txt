@@ -1,0 +1,4 @@
+# Outillage de developpement et de test.
+-r requirements-desktop.txt
+pytest>=8.3.0
+pytest-asyncio>=0.24.0

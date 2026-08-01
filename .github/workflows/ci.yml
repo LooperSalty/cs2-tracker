@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dependances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lancer la suite de tests
+        run: python -m pytest -v
+
+  build:
+    name: Executable Windows
+    runs-on: windows-latest
+    needs: tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Installer les dependances de build
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+
+      # Le script verifie que l'executable demarre reellement et sert
+      # l'interface : un module charge dynamiquement et oublie se manifeste ici
+      # plutot que chez l'utilisateur.
+      - name: Construire et verifier
+        run: powershell -ExecutionPolicy Bypass -File packaging/build.ps1 -SkipInstall
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CS2Tracker-exe
+          path: dist/CS2Tracker.exe
+          retention-days: 30

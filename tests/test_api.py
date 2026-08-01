@@ -1,0 +1,186 @@
+"""Tests de l'API : enveloppe de réponse, validation, ingestion GSI, stockage."""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from cs2tracker.api.app import create_app
+from cs2tracker.config import get_settings
+from tests.test_gsi import payload
+
+
+@pytest.fixture
+def client():
+    with TestClient(create_app(get_settings())) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def gsi_token():
+    return get_settings().gsi_token
+
+
+# --- Enveloppe et routes de base ---------------------------------------------
+def test_health(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["data"]["status"] == "ok"
+
+
+def test_root_lists_endpoints(client):
+    body = client.get("/").json()
+    assert "endpoints" in body["data"]
+
+
+def test_system_status(client):
+    body = client.get("/api/system/status").json()
+    assert body["success"] is True
+    assert "database" in body["data"]
+    assert "gsi_endpoint" in body["data"]
+
+
+def test_openapi_schema_is_generated(client):
+    assert client.get("/openapi.json").status_code == 200
+
+
+# --- Validation ---------------------------------------------------------------
+def test_invalid_steamid_is_rejected(client):
+    response = client.get("/api/players/not-a-steamid/stats")
+    assert response.status_code == 400
+    body = response.json()
+    assert body["success"] is False
+    assert "invalide" in body["error"].lower()
+
+
+def test_offline_identity_parsing(client):
+    body = client.get("/api/players/parse/76561198043717815").json()
+    assert body["data"]["resolved"] is True
+    assert body["data"]["steamid2"].startswith("STEAM_1:")
+
+
+def test_offline_parsing_detects_vanity(client):
+    body = client.get("/api/players/parse/gabelogannewell").json()
+    assert body["data"]["resolved"] is False
+    assert body["data"]["vanity"] == "gabelogannewell"
+
+
+def test_batch_request_rejects_empty_list(client):
+    response = client.post("/api/anticheat/batch", json={"players": []})
+    assert response.status_code == 422
+    assert response.json()["success"] is False
+
+
+def test_batch_request_caps_player_count(client):
+    response = client.post(
+        "/api/anticheat/batch", json={"players": [str(i) for i in range(20)]}
+    )
+    assert response.status_code == 422
+
+
+# --- Anti-triche : routes hors réseau ----------------------------------------
+def test_disclaimer_route(client):
+    data = client.get("/api/anticheat/disclaimer").json()["data"]
+    assert "preuve" in data["disclaimer"].lower()
+    assert "smurfs" in " ".join(data["methodology"]["known_false_positives"])
+    assert "lecture de la memoire du jeu" in data["methodology"]["never_used"]
+
+
+def test_weights_route(client):
+    data = client.get("/api/anticheat/weights").json()["data"]
+    assert data["weights"]["aim.headshot_rate"] > 0
+    assert data["engine"]["confirmed_ban_floor"] >= 70
+
+
+# --- Ingestion GSI ------------------------------------------------------------
+def test_gsi_rejects_bad_token(client):
+    response = client.post("/gsi", json={**payload(), "auth": {"token": "faux"}})
+    assert response.status_code == 401
+
+
+def test_gsi_accepts_valid_token_and_updates_state(client, gsi_token):
+    body = {**payload(), "auth": {"token": gsi_token}}
+    assert client.post("/gsi", json=body).status_code == 200
+
+    state = client.get("/api/live/state").json()["data"]
+    assert state["connected"] is True
+    assert state["state"]["map"]["name"] == "de_mirage"
+
+    scoreboard = client.get("/api/live/scoreboard").json()["data"]
+    assert scoreboard[0]["name"] == "TestPlayer"
+
+
+def test_gsi_events_are_exposed(client, gsi_token):
+    client.post("/gsi", json={**payload(kills=10), "auth": {"token": gsi_token}})
+    client.post(
+        "/gsi",
+        json={**payload(kills=13, round_kills=3), "auth": {"token": gsi_token}},
+    )
+    data = client.get("/api/live/events").json()["data"]
+    assert data["latest_sequence"] > 0
+    assert any(event["type"] in {"kill", "headshot_kill"} for event in data["events"])
+
+
+def test_gsi_rejects_malformed_body(client):
+    response = client.post(
+        "/gsi", content=b"pas du json", headers={"Content-Type": "application/json"}
+    )
+    assert response.status_code == 401
+
+
+def test_live_reset(client, gsi_token):
+    client.post("/gsi", json={**payload(), "auth": {"token": gsi_token}})
+    assert client.post("/api/live/reset").json()["data"]["reset"] is True
+    state = client.get("/api/live/state").json()["data"]
+    assert state["state"] is None
+
+
+def test_live_player_metrics_route(client, gsi_token):
+    client.post("/gsi", json={**payload(), "auth": {"token": gsi_token}})
+    body = client.get("/api/live/players/76561198000000001").json()
+    assert body["success"] is True
+
+
+# --- Persistance --------------------------------------------------------------
+def test_tracked_players_empty_at_start(client):
+    assert client.get("/api/players/tracked").json()["data"] == []
+
+
+def test_favourite_and_notes_roundtrip(client):
+    steamid = "76561198000000001"
+    client.put(f"/api/players/{steamid}/favourite", json={"favourite": True})
+    client.put(f"/api/players/{steamid}/notes", json={"notes": "a surveiller"})
+
+    players = client.get("/api/players/tracked", params={"favourites_only": True}).json()
+    assert players["data"][0]["steamid64"] == steamid
+    assert players["data"][0]["notes"] == "a surveiller"
+
+
+def test_delete_player(client):
+    steamid = "76561198000000001"
+    client.put(f"/api/players/{steamid}/favourite", json={"favourite": True})
+    client.delete(f"/api/players/{steamid}")
+    assert client.get("/api/players/tracked").json()["data"] == []
+
+
+def test_matches_routes(client):
+    assert client.get("/api/matches").json()["data"] == []
+    current = client.get("/api/matches/current").json()["data"]
+    assert current["match"] is None
+    assert client.get("/api/matches/999").status_code == 404
+
+
+def test_gsi_preview_route(client):
+    data = client.get("/api/system/gsi/preview").json()["data"]
+    assert "gamestate_integration" in data["filename"]
+    assert data["endpoint"].endswith("/gsi")
+
+
+# --- WebSocket ----------------------------------------------------------------
+def test_websocket_sends_initial_snapshot(client):
+    with client.websocket_connect("/ws/live") as websocket:
+        message = websocket.receive_json()
+        assert message["type"] == "snapshot"
+        assert "connected" in message["data"]

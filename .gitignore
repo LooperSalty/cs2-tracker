@@ -1,0 +1,32 @@
+# Secrets — ne doit jamais etre versionne
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+*.spec.bak
+
+# Donnees locales
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Outils
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini

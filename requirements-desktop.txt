@@ -1,0 +1,4 @@
+# Fenetre native Qt (option : `python run.py --desktop`).
+# Non embarquee dans l'executable, qui utilise l'interface web.
+-r requirements.txt
+PySide6>=6.8.0
