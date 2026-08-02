@@ -60,6 +60,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Lancer aussi l'overlay affiche par-dessus le jeu",
     )
+    parser.add_argument(
+        "--wait-for-pid",
+        type=int,
+        metavar="PID",
+        help=argparse.SUPPRESS,  # usage interne : redemarrage de l'application
+    )
     parser.add_argument("--version", action="store_true", help="Afficher la version")
     return parser.parse_args(argv)
 
@@ -167,6 +173,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.version:
         print(f"{__app_name__} {__version__}")
         return 0
+
+    # Redemarrage en cours : l'instance precedente detient encore le port.
+    if args.wait_for_pid:
+        from cs2tracker.restart import wait_for_process
+
+        logger.info("Attente de la fin du processus %s...", args.wait_for_pid)
+        wait_for_process(args.wait_for_pid)
 
     if args.install_gsi:
         return _run_install_gsi()

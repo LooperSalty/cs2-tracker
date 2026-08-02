@@ -93,6 +93,13 @@ class SteamKeyRequest(BaseModel):
     """Une clé Steam est une chaîne hexadécimale de 32 caractères."""
 
     key: str = Field(..., min_length=16, max_length=64)
+    verify: bool = Field(
+        default=True,
+        description=(
+            "Interroger Steam pour confirmer que la cle est acceptee. "
+            "Desactivable si Steam est momentanement injoignable."
+        ),
+    )
 
     @field_validator("key")
     @classmethod

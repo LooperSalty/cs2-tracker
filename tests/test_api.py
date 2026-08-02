@@ -178,6 +178,35 @@ def test_gsi_preview_route(client):
     assert data["endpoint"].endswith("/gsi")
 
 
+# --- Enregistrement de la cle Steam -------------------------------------------
+def test_steam_key_is_applied_without_restart(client):
+    """La cle doit devenir utilisable sans relancer l'application.
+
+    ``verify: False`` evite un appel reel a Steam : la suite de tests ne doit
+    dependre ni du reseau ni de la disponibilite de leurs serveurs.
+    """
+    body = client.post(
+        "/api/system/steam-key", json={"key": "B" * 32, "verify": False}
+    ).json()["data"]
+
+    assert body["saved"] is True
+    assert body["applied"] is True
+    assert body["restart_required"] is False
+
+    # Le client Steam a bien ete reconstruit dans le contexte en cours.
+    status = client.get("/api/system/status").json()["data"]
+    assert status["steam_api_configured"] is True
+
+
+def test_steam_key_rejects_short_input(client):
+    assert client.post("/api/system/steam-key", json={"key": "trop-court"}).status_code == 422
+
+
+def test_steam_key_rejects_non_alphanumeric(client):
+    response = client.post("/api/system/steam-key", json={"key": "!" * 32})
+    assert response.status_code == 422
+
+
 # --- Import de lobby ----------------------------------------------------------
 STATUS_PASTE = """
  id   name             steamid

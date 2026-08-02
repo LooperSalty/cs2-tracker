@@ -39,6 +39,15 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Le reset ci-dessus met `margin: 0` partout, ce qui casse le centrage
+   automatique de <dialog>. On restaure la regle du navigateur. */
+dialog { margin: auto; }
+
+/* `display` declare dans une classe l'emporte sur la regle `[hidden]` de la
+   feuille du navigateur, qui est de moindre priorite. Sans ce rappel, tout
+   element masque portant une classe `display: flex` resterait visible. */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; }
 
 body {
@@ -725,6 +734,50 @@ a:hover { text-decoration: underline; }
     color: var(--ash);
     max-height: 260px;
     overflow-y: auto;
+}
+
+/* -------------------------------------------------------- boite de dialogue */
+.modal {
+    background: var(--plate);
+    border: 1px solid var(--line-2);
+    border-radius: 4px;
+    color: var(--bone);
+    padding: 24px 26px 20px;
+    max-width: 480px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.modal::backdrop { background: rgba(4, 6, 9, 0.66); }
+.modal h2 { font-size: 17px; margin-bottom: 10px; }
+.modal p { color: var(--ash); font-size: 13px; line-height: 1.65; }
+.modal code {
+    font-family: var(--mono);
+    background: var(--void);
+    border: 1px solid var(--line);
+    padding: 1px 5px;
+    border-radius: 2px;
+    color: var(--bone);
+}
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+.modal-progress {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 16px;
+    color: var(--flash);
+    font-size: 12.5px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .modal[open] { animation: modal-in 160ms ease; }
+    @keyframes modal-in {
+        from { opacity: 0; transform: translateY(-8px); }
+        to   { opacity: 1; transform: none; }
+    }
 }
 
 /* --------------------------------------------------------------- notifications */

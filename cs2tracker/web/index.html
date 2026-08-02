@@ -325,6 +325,19 @@
 
 <output class="toasts" id="toasts" aria-live="polite"></output>
 
+<dialog class="modal" id="restart-modal" aria-labelledby="restart-title">
+    <h2 id="restart-title">Cle enregistree</h2>
+    <p id="restart-body"></p>
+    <div class="modal-actions">
+        <button class="btn quiet" id="restart-later" hidden>Plus tard</button>
+        <button class="btn go" id="restart-now" hidden>Redemarrer maintenant</button>
+        <button class="btn go" id="restart-ok" hidden>Continuer</button>
+    </div>
+    <p class="modal-progress" id="restart-progress" hidden>
+        <i class="spinner"></i> Redemarrage en cours…
+    </p>
+</dialog>
+
 <script src="/app/app.js"></script>
 </body>
 </html>

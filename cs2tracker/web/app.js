@@ -1174,20 +1174,145 @@ const settings = {
     },
 };
 
+/* ------------------------------------------------- enregistrement de la cle */
+
+//: Longueur d'une cle API Steam. On previent avant l'appel plutot que de
+//: laisser l'API refuser.
+const STEAM_KEY_LENGTH = 32;
+
 $("#save-key").addEventListener("click", async () => {
-    const key = $("#steam-key").value.trim();
+    const input = $("#steam-key");
+    const key = input.value.trim();
+
     if (key.length < 16) {
-        toast("Cette cle semble trop courte — une cle Steam fait 32 caracteres.", "bad");
+        toast(
+            `Cette cle semble trop courte : une cle Steam fait ${STEAM_KEY_LENGTH} caracteres.`,
+            "bad"
+        );
+        input.focus();
         return;
     }
+
+    const button = $("#save-key");
+    button.disabled = true;
     try {
-        await api("/api/system/steam-key", { method: "POST", body: { key } });
-        $("#steam-key").value = "";
-        toast("Cle enregistree. Redemarre l'application pour l'activer.", "ok");
+        const result = await api("/api/system/steam-key", {
+            method: "POST",
+            body: { key },
+        });
+        input.value = "";
+        restartDialog.open(result);
         settings.refresh();
     } catch (error) {
         toast(error.message, "bad");
+    } finally {
+        button.disabled = false;
     }
+});
+
+/**
+ * Dialogue de redemarrage.
+ *
+ * La cle n'est lue qu'au demarrage : le client Steam est construit une seule
+ * fois, a l'ouverture. Plutot que de demander a l'utilisateur de fermer puis
+ * rouvrir, l'application se relance elle-meme.
+ */
+const restartDialog = {
+    //: Duree maximale d'attente avant de considerer le redemarrage perdu.
+    MAX_WAIT_MS: 45000,
+    POLL_MS: 700,
+
+    /**
+     * Presente le resultat de l'enregistrement.
+     *
+     * Trois issues possibles, chacune avec ses propres actions :
+     *   - cle active et verifiee aupres de Steam : simple confirmation ;
+     *   - cle active mais non verifiee : on avertit sans bloquer ;
+     *   - bascule a chaud impossible : on propose le redemarrage.
+     */
+    open(result) {
+        $("#restart-progress").hidden = true;
+
+        const needsRestart = Boolean(result.restart_required);
+        $("#restart-later").hidden = !needsRestart;
+        $("#restart-now").hidden = !needsRestart;
+        $("#restart-ok").hidden = needsRestart;
+        $("#restart-later").disabled = false;
+        $("#restart-now").disabled = false;
+
+        $("#restart-title").textContent = result.verified
+            ? "Cle activee"
+            : "Cle enregistree";
+        $("#restart-body").textContent = result.message;
+
+        $("#restart-modal").showModal();
+    },
+
+    close() {
+        $("#restart-modal").close();
+    },
+
+    async restart() {
+        $("#restart-progress").hidden = false;
+        $("#restart-later").disabled = true;
+        $("#restart-now").disabled = true;
+
+        try {
+            await api("/api/system/restart", { method: "POST" });
+        } catch {
+            // L'API se coupe pendant la requete : la coupure EST le signe que
+            // le redemarrage a bien demarre, ce n'est donc pas une erreur.
+        }
+        this.waitForApi();
+    },
+
+    /**
+     * Attend le retour de l'API puis recharge la page.
+     *
+     * En fenetre native, le processus est remplace et une nouvelle fenetre
+     * s'ouvre : ce code ne sera jamais atteint. Dans le navigateur en revanche,
+     * l'onglet survit et doit se resynchroniser tout seul.
+     */
+    waitForApi() {
+        const deadline = Date.now() + this.MAX_WAIT_MS;
+        let wentDown = false;
+
+        const probe = async () => {
+            try {
+                await api("/health");
+                // Tant que l'API n'a pas disparu, c'est encore l'ancienne
+                // instance qui repond : on attend sa coupure avant de conclure.
+                if (wentDown) {
+                    window.location.reload();
+                    return;
+                }
+            } catch {
+                wentDown = true;
+            }
+
+            if (Date.now() > deadline) {
+                $("#restart-progress").hidden = true;
+                $("#restart-later").disabled = false;
+                toast(
+                    "Le redemarrage prend plus longtemps que prevu. Ferme puis "
+                    + "rouvre l'application si la cle n'est pas active.",
+                    "bad"
+                );
+                return;
+            }
+            setTimeout(probe, this.POLL_MS);
+        };
+
+        setTimeout(probe, this.POLL_MS);
+    },
+};
+
+$("#restart-now").addEventListener("click", () => restartDialog.restart());
+$("#restart-ok").addEventListener("click", () => restartDialog.close());
+$("#restart-later").addEventListener("click", () => {
+    restartDialog.close();
+    toast("Cle enregistree. Elle sera active au prochain demarrage.", "ok");
+    settings.refresh();
 });
 
 $("#install-gsi").addEventListener("click", async () => {

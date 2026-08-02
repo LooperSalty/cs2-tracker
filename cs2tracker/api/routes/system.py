@@ -8,11 +8,21 @@ from cs2tracker import __version__
 from cs2tracker.api.deps import ContextDep
 from cs2tracker.api.schemas import GsiInstallRequest, SteamKeyRequest, ok
 from cs2tracker.config import persist_steam_key
-from cs2tracker.core.errors import ConfigError, Cs2NotFoundError
+from cs2tracker.core.errors import (
+    ConfigError,
+    Cs2NotFoundError,
+    Cs2TrackerError,
+    ProfilePrivateError,
+    SteamUnauthorizedError,
+)
 from cs2tracker.gsi.installer import install_config, render_config, uninstall_config
 from cs2tracker.gsi.locator import try_find_cs2
 
 router = APIRouter(prefix="/api/system", tags=["systeme"])
+
+#: Compte public et permanent, servant uniquement a valider une cle API.
+#: (Gabe Newell — un profil qui ne disparaitra pas.)
+_VERIFICATION_STEAMID = "76561197960287930"
 
 
 @router.get("/status", summary="Etat complet de l'application")
@@ -106,12 +116,12 @@ async def overlay_start(context: ContextDep) -> dict:
 
 
 @router.post("/steam-key", summary="Enregistrer la cle API Steam")
-async def save_steam_key(payload: SteamKeyRequest) -> dict:
+async def save_steam_key(payload: SteamKeyRequest, context: ContextDep) -> dict:
     """Écrit la clé dans le ``.env`` local.
 
     La clé n'est jamais renvoyée : la réponse ne confirme que l'écriture.
-    Le redémarrage est nécessaire car le client Steam est construit au
-    démarrage de l'API.
+    Un redémarrage est nécessaire car le client Steam est construit une seule
+    fois, à l'ouverture de l'application.
     """
     try:
         persist_steam_key(payload.key)
@@ -120,13 +130,72 @@ async def save_steam_key(payload: SteamKeyRequest) -> dict:
             str(exc),
             user_message="Ecriture du fichier .env impossible (droits insuffisants ?).",
         ) from exc
+
+    # Le client Steam est reconstruit a chaud : la cle est utilisable tout de
+    # suite. Le redemarrage n'est propose qu'en cas d'echec de cette bascule.
+    applied = await context.apply_steam_key(payload.key)
+
+    verified = False
+    detail = ""
+    if applied and payload.verify:
+        # La verification doit passer par un endpoint qui *exige* une cle.
+        # `GetNumberOfCurrentPlayers` n'en demande pas : Steam le sert meme avec
+        # une cle inventee, et n'importe quelle chaine passerait pour valide.
+        # `GetPlayerSummaries`, lui, repond 401 si la cle est refusee.
+        try:
+            summaries = await context.steam.get_summaries([_VERIFICATION_STEAMID])
+            # Une cle acceptee mais sans droit de lecture renverrait un lot vide.
+            verified = bool(summaries)
+            if not verified:
+                detail = "Steam n'a renvoye aucune donnee : la cle semble inactive."
+        except (SteamUnauthorizedError, ProfilePrivateError):
+            # Le profil interroge est public et permanent : un refus d'acces ne
+            # peut donc venir que de la cle elle-meme.
+            detail = (
+                "Steam a refuse cette cle. Verifie que tu l'as copiee entierement "
+                "depuis steamcommunity.com/dev/apikey."
+            )
+        except Cs2TrackerError as exc:
+            detail = f"Cle enregistree, mais Steam est injoignable : {exc.user_message}"
+
+    if verified:
+        message = "Cle enregistree et activee. Aucun redemarrage necessaire."
+    elif applied and not payload.verify:
+        message = "Cle enregistree et activee (verification ignoree)."
+    elif applied:
+        message = detail or "Cle enregistree, mais elle n'a pas pu etre verifiee."
+    else:
+        message = "Cle enregistree. Elle sera active apres le redemarrage."
+
     return ok(
         {
             "saved": True,
-            "restart_required": True,
-            "message": "Cle enregistree. Redemarre l'application pour l'activer.",
+            "applied": applied,
+            "verified": verified,
+            "restart_required": not applied,
+            "message": message,
         }
     )
+
+
+@router.post("/restart", summary="Redemarrer l'application")
+async def restart_application() -> dict:
+    """Relance l'application et arrête l'instance courante.
+
+    La nouvelle instance attend la libération du port avant de démarrer : la
+    réponse part donc avant que ce processus ne se termine.
+    """
+    from cs2tracker.restart import restart_now
+
+    if not restart_now():
+        raise ConfigError(
+            "relaunch failed",
+            user_message=(
+                "Redemarrage automatique impossible. Ferme puis rouvre "
+                "l'application pour activer la cle."
+            ),
+        )
+    return ok({"restarting": True, "message": "Redemarrage en cours..."})
 
 
 @router.post("/cache/clear", summary="Vider le cache Steam")

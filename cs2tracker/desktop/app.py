@@ -16,6 +16,7 @@ from cs2tracker.config import Settings
 from cs2tracker.desktop import overlay_launcher
 from cs2tracker.desktop.tray import TrayController
 from cs2tracker.logging_setup import get_logger
+from cs2tracker.restart import set_shutdown_hook
 from cs2tracker.server import ApiServer
 
 logger = get_logger(__name__)
@@ -73,6 +74,11 @@ class DesktopApp:
         )
         self._tray.start()
 
+        # Un redemarrage declenche depuis l'interface doit fermer la fenetre et
+        # l'icone systeme avant de rendre la main, sinon la nouvelle instance
+        # afficherait une seconde icone.
+        set_shutdown_hook(self._prepare_for_restart)
+
         # `gui="edgechromium"` force WebView2 : sans cela, pywebview pourrait
         # retomber sur un moteur MSHTML vetuste qui ne rend pas l'interface.
         webview.start(gui="edgechromium", private_mode=False)
@@ -128,6 +134,13 @@ class DesktopApp:
                 self._window.destroy()
         except Exception as exc:  # noqa: BLE001
             logger.debug("Fermeture de la fenetre : %s", exc)
+
+    def _prepare_for_restart(self) -> None:
+        """Libère fenêtre et icône avant que le processus ne se termine."""
+        self._quitting = True
+        if self._tray is not None:
+            self._tray.stop()
+        self._hide_window()
 
 
 def _show_error(message: str) -> None:

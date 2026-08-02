@@ -50,6 +50,35 @@ class AppContext:
     def has_steam(self) -> bool:
         return self.steam_service is not None
 
+    async def apply_steam_key(self, key: str) -> bool:
+        """Remplace le client Steam à chaud, sans redémarrer l'application.
+
+        Le client était historiquement construit une seule fois au démarrage,
+        ce qui obligeait à relancer le programme après avoir saisi une clé.
+        Le reconstruire ici rend la clé utilisable immédiatement.
+
+        Renvoie ``False`` si la clé est vide.
+        """
+        cleaned = key.strip()
+        if not cleaned:
+            return False
+
+        previous = self.steam_client
+        self.settings = self.settings.with_steam_key(cleaned)
+        self.steam_client = SteamClient(cleaned)
+        self.steam_service = SteamService(self.steam_client)
+
+        # L'ancien client detient un pool de connexions : le fermer apres avoir
+        # bascule evite toute fenetre pendant laquelle aucun client n'existe.
+        if previous is not None:
+            try:
+                await previous.close()
+            except Exception as exc:  # noqa: BLE001 - la bascule prime
+                logger.debug("Fermeture de l'ancien client Steam : %s", exc)
+
+        logger.info("Cle API Steam appliquee sans redemarrage.")
+        return True
+
     def system_status(self) -> dict[str, Any]:
         installation = try_find_cs2(self.settings.cs2_path_override)
         return {
