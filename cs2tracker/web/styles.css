@@ -95,23 +95,21 @@ a:hover { text-decoration: underline; }
     flex-direction: column;
 }
 
-.brand { padding: 22px 20px 18px; border-bottom: 1px solid var(--line); }
-.brand-mark {
-    font-size: 17px;
-    font-weight: 800;
-    letter-spacing: -0.03em;
+.brand {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 11px;
+    padding: 18px 18px 16px;
+    border-bottom: 1px solid var(--line);
 }
-.brand-mark::before {
-    content: "";
-    width: 3px;
-    height: 17px;
-    background: var(--flash);
-    display: block;
+.brand-logo { flex: 0 0 34px; border-radius: 6px; }
+.brand-mark {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
 }
-.brand-sub { margin-top: 5px; padding-left: 12px; }
+.brand-sub { margin-top: 3px; white-space: nowrap; }
 
 .nav { padding: 12px 0; flex: 1; }
 
@@ -400,6 +398,9 @@ a:hover { text-decoration: underline; }
     text-align: left;
 }
 .candidate {
+    display: flex;
+    align-items: center;
+    gap: 11px;
     background: var(--plate);
     border: 1px solid var(--line);
     border-radius: 3px;
@@ -409,6 +410,23 @@ a:hover { text-decoration: underline; }
     color: var(--bone);
     text-align: left;
     transition: border-color 120ms ease, background-color 120ms ease;
+}
+.candidate-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 2px;
+    background: var(--void);
+    border: 1px solid var(--line);
+    flex: 0 0 40px;
+    object-fit: cover;
+}
+.candidate-body { min-width: 0; flex: 1; }
+.candidate-hours {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--flash);
+    margin-top: 3px;
 }
 .candidate:hover { border-color: var(--flash); background: var(--rail); }
 .candidate:focus-visible { outline: 2px solid var(--flash); outline-offset: 2px; }
@@ -913,7 +931,8 @@ a:hover { text-decoration: underline; }
 
 @media (max-width: 720px) {
     :root { --rail-w: 60px; --gut: 16px; }
-    .brand-sub, .nav-item span, .rig-row span { display: none; }
+    .brand { justify-content: center; padding: 16px 0; }
+    .brand-mark, .brand-sub, .nav-item span, .rig-row span { display: none; }
     .nav-item { justify-content: center; padding: 12px 0; }
     .rig { padding: 12px 0; }
     .rig-row { justify-content: center; }

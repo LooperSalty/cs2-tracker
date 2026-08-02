@@ -10,12 +10,24 @@ if(NOT WIN32)
     message(FATAL_ERROR "L'overlay repose sur l'API Win32 et ne cible que Windows.")
 endif()
 
-add_executable(CS2TrackerOverlay WIN32
+set(OVERLAY_SOURCES
     src/main.cpp
     src/overlay_window.cpp
     src/api_client.cpp
     src/json.cpp
 )
+
+# Icone et informations de version. Le fichier .rc reference icon.ico par un
+# chemin relatif : le compilateur de ressources doit donc etre lance depuis le
+# dossier qui les contient.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/icon.ico")
+    list(APPEND OVERLAY_SOURCES resources.rc)
+    set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /I\"${CMAKE_CURRENT_SOURCE_DIR}\"")
+else()
+    message(STATUS "icon.ico absent : l'executable gardera l'icone par defaut.")
+endif()
+
+add_executable(CS2TrackerOverlay WIN32 ${OVERLAY_SOURCES})
 
 target_include_directories(CS2TrackerOverlay PRIVATE src)
 

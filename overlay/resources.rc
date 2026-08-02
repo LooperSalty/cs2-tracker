@@ -1,0 +1,35 @@
+// Ressources Win32 de l'overlay.
+//
+// L'identifiant 1 est celui que l'Explorateur retient pour l'icone de
+// l'executable : la premiere icone par ordre numerique fait foi.
+1 ICON "icon.ico"
+
+1 VERSIONINFO
+FILEVERSION     1, 5, 0, 0
+PRODUCTVERSION  1, 5, 0, 0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0x0L
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        // 040c = francais, 04b0 = Unicode.
+        BLOCK "040c04b0"
+        BEGIN
+            VALUE "CompanyName",      "CS2 Tracker"
+            VALUE "FileDescription",  "Overlay CS2 Tracker"
+            VALUE "FileVersion",      "1.5.0.0"
+            VALUE "InternalName",     "CS2TrackerOverlay"
+            VALUE "LegalCopyright",   "MIT"
+            VALUE "OriginalFilename", "CS2TrackerOverlay.exe"
+            VALUE "ProductName",      "CS2 Tracker"
+            VALUE "ProductVersion",   "1.5.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x40c, 0x4b0
+    END
+END

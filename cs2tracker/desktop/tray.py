@@ -6,7 +6,9 @@ les données du jeu pendant la partie. Seule l'entrée « Quitter » arrête tou
 
 from __future__ import annotations
 
+import sys
 import threading
+from pathlib import Path
 from typing import Callable
 
 from cs2tracker.logging_setup import get_logger
@@ -17,13 +19,34 @@ logger = get_logger(__name__)
 _ICON_SIZE = 64
 
 
-def build_icon_image():
-    """Dessine le réticule orange de l'application, sans fichier externe.
+def _bundled_icon_path() -> Path | None:
+    """Icône embarquée, y compris depuis un exécutable figé."""
+    roots = [Path(__file__).resolve().parent]
+    bundle = getattr(sys, "_MEIPASS", "")
+    if bundle:
+        roots.append(Path(bundle) / "cs2tracker" / "desktop")
+    for root in roots:
+        candidate = root / "tray_icon.png"
+        if candidate.is_file():
+            return candidate
+    return None
 
-    Générer l'icône évite d'embarquer une ressource et garantit qu'elle est
-    toujours disponible, y compris dans un exécutable figé.
+
+def build_icon_image():
+    """Icône de la zone de notification.
+
+    On charge le logo de l'application ; à défaut — ressource absente ou
+    illisible — un réticule est dessiné à la volée, pour qu'une icône soit
+    toujours affichée.
     """
     from PIL import Image, ImageDraw
+
+    path = _bundled_icon_path()
+    if path is not None:
+        try:
+            return Image.open(path).convert("RGBA")
+        except OSError as exc:
+            logger.warning("Icone %s illisible (%s), repli sur le trace.", path, exc)
 
     image = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (11, 14, 19, 255))
     draw = ImageDraw.Draw(image)

@@ -115,6 +115,17 @@ def active_account_id() -> int:
         return 0
 
 
+def is_ambiguous() -> bool:
+    """Vrai si plusieurs comptes Steam cohabitent sur cette machine.
+
+    Dans ce cas, deviner est risqué : la clé API appartient au compte connecté
+    sur le **site** Steam, alors que la détection observe le **client**. Les
+    deux diffèrent régulièrement, et rien ne permet de les relier. Mieux vaut
+    alors demander qu'imposer un mauvais profil.
+    """
+    return len(read_known_accounts()) > 1
+
+
 def detect_local_account() -> LocalAccount | None:
     """Meilleure hypothèse sur l'identité de l'utilisateur."""
     accounts = read_known_accounts()

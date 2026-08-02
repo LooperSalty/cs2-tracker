@@ -26,6 +26,11 @@ PROJECT_ROOT = Path(SPECPATH).parent
 datas = [
     (str(PROJECT_ROOT / "cs2tracker" / "web"), "cs2tracker/web"),
     (str(PROJECT_ROOT / "cs2tracker" / "storage" / "schema.sql"), "cs2tracker/storage"),
+    # Icone de la zone de notification, chargee a l'execution.
+    (
+        str(PROJECT_ROOT / "cs2tracker" / "desktop" / "tray_icon.png"),
+        "cs2tracker/desktop",
+    ),
 ]
 
 # pywebview embarque les assemblages WebView2 dans son propre paquet ; sans eux

@@ -7,6 +7,7 @@ session Steam ouverte, puis l'historique de connexion local.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
@@ -16,12 +17,14 @@ from cs2tracker.anticheat.engine import analyse
 from cs2tracker.anticheat.percentiles import rank_player, rank_weapon_accuracy
 from cs2tracker.api.deps import ContextDep, SteamDep
 from cs2tracker.api.schemas import SetMeRequest, ok
-from cs2tracker.core.errors import PlayerNotFoundError
+from cs2tracker.constants import CS2_APP_ID
+from cs2tracker.core.errors import Cs2TrackerError, PlayerNotFoundError
 from cs2tracker.core.steamid import from_steamid64
 from cs2tracker.logging_setup import get_logger
 from cs2tracker.steam.local_user import (
     account_from_gsi,
     detect_local_account,
+    is_ambiguous,
     read_known_accounts,
 )
 from cs2tracker.steam.parsers import group_raw_stats, summarize_weapon_totals
@@ -33,17 +36,28 @@ router = APIRouter(prefix="/api/me", tags=["mes-stats"])
 
 
 async def _resolve_me(context: ContextDep) -> tuple[str, str]:
-    """Renvoie ``(steamid, origine)`` pour l'utilisateur courant."""
+    """Renvoie ``(steamid, origine)`` pour l'utilisateur courant.
+
+    Ne devine **que** lorsque la réponse est certaine. Si plusieurs comptes
+    Steam existent sur la machine, on préfère ne rien renvoyer plutôt que
+    d'afficher les statistiques de quelqu'un d'autre : la clé API appartient au
+    compte connecté sur le *site* Steam, la détection observe le *client*, et
+    rien ne relie les deux.
+    """
     stored = context.settings_repo.get_me()
     if stored:
         return stored, "choix enregistre"
 
-    # Une partie en cours identifie le joueur local sans ambiguite.
+    # Une partie en cours identifie le joueur local sans ambiguite : c'est la
+    # seule source qui prime sur l'incertitude du multi-compte.
     snapshot = await context.live.snapshot()
     if snapshot.state is not None and snapshot.state.provider is not None:
         from_game = account_from_gsi(snapshot.state.provider.steamid)
         if from_game is not None:
             return from_game.steamid64, from_game.source
+
+    if is_ambiguous():
+        return "", "plusieurs comptes"
 
     detected = detect_local_account()
     if detected is not None:
@@ -51,10 +65,61 @@ async def _resolve_me(context: ContextDep) -> tuple[str, str]:
     return "", ""
 
 
+async def _enrich_candidates(context: ContextDep) -> list[dict[str, Any]]:
+    """Complète chaque compte local avec son avatar et ses heures de CS2.
+
+    Choisir entre dix pseudos locaux est difficile ; choisir entre dix cartes
+    portant l'avatar et le temps de jeu CS2 est immédiat. C'est ce qui permet à
+    l'utilisateur de désigner du premier coup le compte auquel appartient sa
+    clé API.
+    """
+    accounts = read_known_accounts()
+    candidates = [account.as_dict() for account in accounts]
+    if not candidates or not context.has_steam:
+        return candidates
+
+    steamids = [str(entry["steamid64"]) for entry in candidates]
+
+    # Un seul appel couvre les dix comptes.
+    try:
+        summaries = await context.steam.get_summaries(steamids)
+    except Cs2TrackerError as exc:
+        logger.info("Profils des comptes locaux indisponibles : %s", exc)
+        return candidates
+
+    async def cs2_hours(steamid: str) -> float | None:
+        try:
+            games = await context.steam.get_owned_games(steamid)
+        except Cs2TrackerError:
+            return None
+        cs2 = next((g for g in games if g.appid == CS2_APP_ID), None)
+        return round(cs2.hours, 1) if cs2 else None
+
+    hours = await asyncio.gather(
+        *(cs2_hours(steamid) for steamid in steamids), return_exceptions=True
+    )
+
+    for entry, played in zip(candidates, hours):
+        summary = summaries.get(str(entry["steamid64"]))
+        if summary is not None:
+            entry["persona_name"] = summary.persona_name or entry["persona_name"]
+            entry["avatar"] = summary.avatar_medium or summary.avatar
+            entry["profile_public"] = summary.is_public
+        entry["cs2_hours"] = played if isinstance(played, float) else None
+
+    # Volontairement pas de tri par heures de jeu ni de compte « recommande ».
+    # Le nombre d'heures CS2 ne dit rien du compte recherche : un joueur peut
+    # vouloir consulter un compte secondaire, et la cle API n'appartient pas
+    # necessairement au compte le plus joue. Ces informations servent a
+    # *reconnaitre* son compte, pas a en designer un a sa place. L'ordre reste
+    # chronologique, tel que Steam l'a enregistre.
+    return candidates
+
+
 @router.get("/identity", summary="Qui suis-je ?")
 async def identity(context: ContextDep) -> dict:
     steamid, source = await _resolve_me(context)
-    candidates = [account.as_dict() for account in read_known_accounts()]
+    candidates = await _enrich_candidates(context)
     return ok(
         {
             "steamid64": steamid or None,
@@ -63,6 +128,7 @@ async def identity(context: ContextDep) -> dict:
             "identity": from_steamid64(steamid).as_dict() if steamid else None,
             "candidates": candidates,
             "detected_accounts": len(candidates),
+            "ambiguous": is_ambiguous(),
         }
     )
 
@@ -93,10 +159,12 @@ async def me(
     steamid, source = await _resolve_me(context)
     if not steamid:
         raise PlayerNotFoundError(
-            "Aucun compte Steam detecte sur cette machine.",
+            f"Compte indetermine ({source or 'aucune source'}).",
             user_message=(
-                "Impossible de deviner ton compte Steam. Renseigne ton SteamID64 "
-                "dans l'onglet « Mes stats »."
+                "Plusieurs comptes Steam existent sur ce PC. Choisis celui qui "
+                "est le tien — c'est celui auquel appartient ta cle API."
+                if source == "plusieurs comptes"
+                else "Impossible de deviner ton compte Steam. Renseigne ton SteamID64."
             ),
         )
 

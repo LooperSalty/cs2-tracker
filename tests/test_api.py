@@ -203,6 +203,34 @@ def test_set_and_clear_me(client):
     assert client.get("/api/me/identity").json()["data"]["confirmed"] is False
 
 
+def test_ambiguous_machine_refuses_to_guess(client, monkeypatch):
+    """Avec plusieurs comptes locaux, mieux vaut demander que se tromper.
+
+    La cle API appartient au compte connecte sur le *site* Steam, alors que la
+    detection observe le *client*. Les deux different regulierement.
+    """
+    monkeypatch.setattr("cs2tracker.api.routes.me.is_ambiguous", lambda: True)
+
+    data = client.get("/api/me/identity").json()["data"]
+    assert data["steamid64"] is None
+    assert data["source"] == "plusieurs comptes"
+
+    # La consultation echoue avec un message qui explique quoi faire.
+    response = client.get("/api/me")
+    assert response.status_code == 404
+    assert "Choisis celui qui est le tien" in response.json()["error"]
+
+
+def test_confirmed_choice_wins_over_ambiguity(client, monkeypatch):
+    monkeypatch.setattr("cs2tracker.api.routes.me.is_ambiguous", lambda: True)
+    steamid = "76561198674648091"
+    client.put("/api/me", json={"steamid64": steamid})
+
+    data = client.get("/api/me/identity").json()["data"]
+    assert data["steamid64"] == steamid
+    assert data["source"] == "choix enregistre"
+
+
 def test_set_me_rejects_malformed_steamid(client):
     assert client.put("/api/me", json={"steamid64": "123"}).status_code == 422
     assert client.put("/api/me", json={"steamid64": "abcdefghijklmnopq"}).status_code == 422

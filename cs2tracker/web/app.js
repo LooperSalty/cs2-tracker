@@ -637,6 +637,43 @@ function describeAccount(account) {
     return `derniere connexion ${shortDate(when)}`;
 }
 
+/**
+ * Carte de choix d'un compte : avatar, pseudo et heures CS2.
+ *
+ * Aucun compte n'est mis en avant. Le nombre d'heures ne designe pas le bon
+ * compte — la cle API n'appartient pas forcement au compte le plus joue, et
+ * l'utilisateur peut vouloir consulter un compte secondaire. Ces informations
+ * sont la pour qu'il *reconnaisse* le sien, pas pour choisir a sa place.
+ */
+function renderCandidate(account) {
+    const name = account.persona_name || account.account_name || "Compte sans nom";
+    const hours = account.cs2_hours;
+
+    const avatar = typeof account.avatar === "string"
+        && account.avatar.startsWith("https://")
+        ? `<img class="candidate-avatar" alt="" src="${escapeAttr(account.avatar)}">`
+        : `<span class="candidate-avatar"></span>`;
+
+    let detail;
+    if (hours) {
+        detail = `<div class="candidate-hours">${dec(hours, 0)} h sur CS2</div>`;
+    } else if (account.profile_public === false) {
+        detail = `<div class="candidate-note">profil prive</div>`;
+    } else {
+        detail = `<div class="candidate-note">${escapeAttr(describeAccount(account))}</div>`;
+    }
+
+    return `
+    <button class="candidate" data-steamid="${escapeAttr(account.steamid64)}">
+        ${avatar}
+        <div class="candidate-body">
+            <div class="candidate-name">${escapeAttr(name)}</div>
+            <div class="candidate-id">${escapeAttr(account.steamid64)}</div>
+            ${detail}
+        </div>
+    </button>`;
+}
+
 const mine = {
     loaded: false,
     steamid: "",
@@ -692,19 +729,7 @@ const mine = {
             const identity = await api("/api/me/identity");
             const candidates = identity.candidates || [];
             $("#mine-candidates").innerHTML = candidates.length
-                ? candidates
-                    .map((account) => {
-                        const name = account.persona_name || account.account_name
-                            || "Compte sans nom";
-                        const note = describeAccount(account);
-                        return `
-                        <button class="candidate" data-steamid="${escapeAttr(account.steamid64)}">
-                            <div class="candidate-name">${escapeAttr(name)}</div>
-                            <div class="candidate-id">${escapeAttr(account.steamid64)}</div>
-                            <div class="candidate-note">${escapeAttr(note)}</div>
-                        </button>`;
-                    })
-                    .join("")
+                ? candidates.map(renderCandidate).join("")
                 : `<p class="paste-help">Aucun compte Steam detecte sur ce PC.</p>`;
 
             $$("#mine-candidates .candidate").forEach((button) =>

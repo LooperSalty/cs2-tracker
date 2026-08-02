@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import threading
 import time
 from typing import Callable
@@ -11,6 +12,7 @@ import uvicorn
 
 from cs2tracker.api.app import create_app
 from cs2tracker.config import Settings, get_settings
+from cs2tracker.core.errors import Cs2TrackerError
 from cs2tracker.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -18,6 +20,35 @@ logger = get_logger(__name__)
 #: Délai maximal d'attente du démarrage de l'API avant d'ouvrir l'interface.
 STARTUP_TIMEOUT_SECONDS = 20.0
 _HEALTH_POLL_INTERVAL = 0.25
+
+
+def port_owner(host: str, port: int) -> str:
+    """Décrit ce qui occupe déjà ``host:port``, ou une chaîne vide.
+
+    Sans cette vérification, une seconde instance échoue à s'attacher et meurt
+    en silence — l'utilisateur voit alors l'ancienne version répondre et croit
+    que ses modifications n'ont aucun effet.
+    """
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(0.5)
+        # SO_EXCLUSIVEADDRUSE n'existe que sous Windows ; ailleurs, la
+        # tentative de bind suffit a detecter l'occupation.
+        probe.bind((host, port))
+    except OSError:
+        return f"{host}:{port}"
+    else:
+        return ""
+    finally:
+        probe.close()
+
+
+class PortBusyError(Cs2TrackerError):
+    status_code = 503
+    user_message = (
+        "Le port de l'API est deja utilise. Une autre instance de CS2 Tracker "
+        "tourne probablement deja : ferme-la, ou change CS2T_API_PORT."
+    )
 
 
 class ApiServer:
@@ -47,12 +78,21 @@ class ApiServer:
     def base_url(self) -> str:
         return self._settings.api_base_url
 
+    def ensure_port_free(self) -> None:
+        """Lève ``PortBusyError`` si le port est déjà pris."""
+        if port_owner(self._settings.api_host, self._settings.api_port):
+            raise PortBusyError(
+                f"Port {self._settings.api_port} deja occupe."
+            )
+
     def run_blocking(self) -> None:
+        self.ensure_port_free()
         self._server.run()
 
     def start_background(self) -> None:
         if self._thread is not None:
             return
+        self.ensure_port_free()
         self._thread = threading.Thread(
             target=self._server.run, name="cs2tracker-api", daemon=True
         )
