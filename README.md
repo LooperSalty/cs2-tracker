@@ -1,62 +1,69 @@
+<div align="right">
+
+**English** · [Français](README.fr.md)
+
+</div>
+
 # CS2 Tracker
 
-Application Windows de suivi statistique pour **Counter-Strike 2**, avec une API
-REST locale, un suivi de partie en temps réel et un moteur d'analyse anti-triche
-heuristique et explicable.
+<img src="img/logo.png" alt="" width="96" align="right">
+
+Windows stat-tracking app for **Counter-Strike 2**, with a local REST API,
+live match tracking, and an explainable heuristic anti-cheat engine.
 
 ```
 ┌─ Steam Web API ─────┐      ┌─ CS2 (Game State Integration) ─┐
-│ profils · stats     │      │ état de la partie, 10×/seconde │
-│ sanctions VAC       │      └────────────┬───────────────────┘
+│ profiles · stats    │      │ match state, 10×/second        │
+│ VAC bans            │      └────────────┬───────────────────┘
 └──────────┬──────────┘                   │
            └─────────────┬────────────────┘
                          ▼
-              ┌──── API locale ────┐
-              │ FastAPI · SQLite   │──▶ interface web  (défaut)
-              │ moteur anti-triche │──▶ fenêtre Qt     (option)
-              └────────────────────┘──▶ vos propres outils
+              ┌──── local API ─────┐
+              │ FastAPI · SQLite   │──▶ native window (default)
+              │ anti-cheat engine  │──▶ in-game overlay
+              └────────────────────┘──▶ your own tools
 ```
 
 ---
 
-## Ce que fait l'application
+## What it does
 
 | | |
 |---|---|
-| **Profil complet** | Identité (SteamID64/2/3), ancienneté, niveau, amis, bibliothèque, succès |
-| **Statistiques à vie** | Kills, précision, headshots, dégâts, MVP, manches — par arme et par carte |
-| **Classement** | Chaque statistique replacée dans la population : « top 8 % », « Excellent » |
-| **Temps réel** | Score, manche, phase, bombe, tableau des scores, flux d'événements |
-| **Overlay en jeu** | Panneau natif par-dessus CS2, sans injection ([`overlay/`](overlay/)) |
-| **Sanctions** | Bannissements VAC et éditeur, ancienneté, restrictions communautaires |
-| **Anti-triche** | Score de suspicion 0–100 avec le détail de chaque indicateur |
-| **Import de lobby** | Colle un `status` de la console CS2 pour analyser les 10 joueurs |
-| **Historique** | Relevés horodatés, courbes d'évolution, détection de rupture de niveau |
-| **API REST** | ~40 endpoints documentés, ouverts à vos propres outils |
+| **Full profile** | Identity (SteamID64/2/3), account age, level, friends, library, achievements |
+| **Lifetime stats** | Kills, accuracy, headshots, damage, MVPs, rounds — per weapon and per map |
+| **Ranking** | Every stat placed against the population: "top 8 %", "Excellent" |
+| **Live** | Score, round, phase, bomb, scoreboard, event feed |
+| **In-game overlay** | Native panel on top of CS2, no injection ([`overlay/`](overlay/)) |
+| **Bans** | VAC and game bans, recency, community restrictions |
+| **Anti-cheat** | 0–100 suspicion score with every contributing indicator spelled out |
+| **Lobby import** | Paste a `status` dump from the CS2 console to analyse all 10 players |
+| **History** | Timestamped snapshots, trend charts, sudden skill-jump detection |
+| **REST API** | ~40 documented endpoints, open to your own tools |
 
 ---
 
-## Installation
+## Install
 
-### Option A — l'exécutable (recommandé)
+### Option A — the executable (recommended)
 
-1. Télécharge `CS2Tracker.exe` depuis la page [Releases](../../releases).
-2. Double-clique.
+1. Download `CS2Tracker.exe` from the [Releases](../../releases) page.
+2. Double-click it.
 
-Une **fenêtre d'application** s'ouvre. Pas de terminal, pas de navigateur :
-l'interface est rendue par WebView2, le moteur intégré à Windows.
+An **application window** opens. No terminal, no browser: the interface is
+rendered by WebView2, the engine already built into Windows.
 
-Fermer la fenêtre ne quitte pas le programme — il continue en arrière-plan dans
-la zone de notification, pour que l'API reçoive les données du jeu pendant ta
-partie. Clique sur l'icône pour rouvrir la fenêtre, ou choisis **Quitter**.
+Closing the window does not quit the program — it keeps running in the
+notification area so the API can receive game data while you play. Click the
+icon to reopen the window, or pick **Quitter** to exit for real.
 
-Télécharge aussi `CS2TrackerOverlay.exe` et place-le **à côté** si tu veux
-l'affichage par-dessus le jeu.
+Also download `CS2TrackerOverlay.exe` and place it **next to** the main
+executable if you want the in-game display.
 
-Aucun Python à installer, aucune dépendance. Un dossier de données est créé dans
+No Python, no dependencies. A data folder is created at
 `%LOCALAPPDATA%\CS2Tracker`.
 
-### Option B — depuis les sources
+### Option B — from source
 
 ```powershell
 git clone https://github.com/LooperSalty/cs2-tracker.git
@@ -65,167 +72,181 @@ python -m pip install -r requirements.txt
 python run.py
 ```
 
-Python 3.11 ou supérieur.
+Python 3.11 or later.
 
 ---
 
-## Configuration en deux étapes
+## Two-step setup
 
-### 1. Clé API Steam
+### 1. Steam API key
 
-Indispensable pour lire les profils. Elle est **gratuite** et s'obtient en une
-minute sur [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey).
+Required to read profiles. It is **free** and takes a minute to get at
+[steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey).
 
-Renseigne-la dans l'onglet **Configuration** de l'application, ou crée un fichier
-`.env` à la racine :
+Paste it in the app's **Configuration** tab, or create a `.env` file at the
+repository root:
 
 ```ini
-STEAM_API_KEY=TA_CLE_ICI
+STEAM_API_KEY=YOUR_KEY_HERE
 ```
 
-La clé n'est écrite que dans ce fichier local et n'est envoyée qu'à Steam.
+The key is written only to that local file and is only ever sent to Steam. It
+takes effect immediately — no restart needed.
 
-### 2. Liaison temps réel avec CS2
+> If several Steam accounts exist on your PC, the app **asks** which one is
+> yours instead of guessing. The API key belongs to whichever account was
+> signed in on the Steam *website*, while auto-detection can only see the Steam
+> *client* — and nothing links the two.
 
-Onglet **Configuration** → **Installer**. L'application écrit
-`gamestate_integration_cs2tracker.cfg` dans le dossier de configuration de CS2,
-puis **redémarre CS2**.
+### 2. Live link with CS2
 
-C'est le mécanisme officiel de Valve : le jeu pousse lui-même son état vers
-l'application. Rien n'est lu en mémoire, rien n'est injecté.
+**Configuration** tab → **Installer**. The app writes
+`gamestate_integration_cs2tracker.cfg` into the CS2 config folder. Then
+**restart CS2**.
 
-> En partie classique, CS2 ne transmet que **ton propre** état. Les données de
-> tous les joueurs n'arrivent qu'en mode spectateur ou sur une retransmission
-> GOTV — c'est une limite volontaire de Valve, pas un défaut de l'application.
+This is Valve's official mechanism: the game itself pushes its state to the
+app. Nothing is read from memory, nothing is injected.
+
+> In a normal match, CS2 only transmits **your own** state. Data for every
+> player only arrives in spectator mode or on a GOTV broadcast — that is a
+> deliberate Valve restriction, not a limitation of this app. Use the lobby
+> import to analyse opponents in a normal match.
 
 ---
 
-## Utilisation
+## Usage
 
 ```powershell
-CS2Tracker.exe                      # fenêtre native + API (défaut)
-CS2Tracker.exe --overlay            # lance aussi l'overlay par-dessus le jeu
-CS2Tracker.exe --browser            # interface dans le navigateur
-CS2Tracker.exe --api-only           # API seule, pour un client tiers
-CS2Tracker.exe --analyse <steamid>  # rapport d'analyse en console
-CS2Tracker.exe --install-gsi        # écrit la configuration GSI puis quitte
+CS2Tracker.exe                      # native window + API (default)
+CS2Tracker.exe --overlay            # also start the in-game overlay
+CS2Tracker.exe --browser            # interface in your browser instead
+CS2Tracker.exe --api-only           # API only, for a third-party client
+CS2Tracker.exe --analyse <steamid>  # console analysis report
+CS2Tracker.exe --install-gsi        # write the GSI config, then exit
 ```
 
-Documentation interactive de l'API : `http://127.0.0.1:8642/docs`.
+Interactive API docs: `http://127.0.0.1:8642/docs`.
 
-### L'overlay en jeu
+### The in-game overlay
 
-Onglet **Configuration** → **Lancer l'overlay**, ou via l'icône de la zone de
-notification. Il affiche score, manche, bombe et risque de chaque joueur
-par-dessus CS2.
+**Configuration** tab → **Lancer l'overlay**, or from the notification-area
+icon. It shows the score, round, bomb timer and per-player risk on top of CS2.
 
-**Règle CS2 sur « Plein écran fenêtre »** : une fenêtre superposée ne peut pas
-s'afficher au-dessus d'une application en plein écran exclusif.
+**Set CS2 to "Fullscreen Windowed"** — a layered window cannot draw on top of
+an exclusive-fullscreen application.
 
-`F8` masque · `F9` déplace · `Ctrl+Maj+F8` ferme.
+`F8` hide · `F9` move · `Ctrl+Shift+F8` quit.
 
 ---
 
-## Le moteur anti-triche
+## The anti-cheat engine
 
-**Ce qu'il produit** : un score de suspicion de 0 à 100, un verdict, et surtout
-**la liste des indicateurs qui l'ont fait monter**, chacun avec sa mesure, sa
-référence de population et sa taille d'échantillon.
+**What it produces**: a 0–100 suspicion score, a verdict, and above all **the
+list of indicators that pushed it up**, each with its measurement, its
+population reference and its sample size.
 
-**Ce qu'il n'est pas** : une preuve. Seul Valve dispose des éléments (mémoire du
-client, télémétrie serveur) permettant de conclure.
+**What it is not**: proof. Only Valve holds the evidence (client memory, server
+telemetry) needed to conclude.
 
-### Principe
+### Principle
 
-Une trentaine de détecteurs répartis en sept familles comparent le joueur à des
-distributions de référence. Trois garde-fous rendent le moteur conservateur :
+About thirty detectors across eight families compare the player to reference
+distributions. Three safeguards keep the engine conservative:
 
-1. **La confiance module tout.** Un taux de 100 % de headshots sur 3 kills ne
-   déclenche rien : les taux sont lissés bayésiennement et pondérés par la
-   taille de l'échantillon.
-2. **La corroboration prime sur l'intensité.** Il faut que plusieurs familles
-   *indépendantes* concordent pour approcher le haut de l'échelle. Un seul écart,
-   même extrême, ne suffit pas.
-3. **La couverture est prise en compte.** Sans statistiques de jeu, le verdict
-   devient `INDÉTERMINÉ` plutôt que de se prononcer à l'aveugle.
+1. **Confidence gates everything.** A 100 % headshot rate over 3 kills triggers
+   nothing: rates are Bayesian-smoothed and weighted by sample size.
+2. **Corroboration beats intensity.** Several *independent* families must agree
+   before the score approaches the top. One outlier, however extreme, is not
+   enough.
+3. **Coverage is accounted for.** With no gameplay stats, the verdict becomes
+   `INDÉTERMINÉ` rather than guessing blind.
 
-### Familles d'indicateurs
+### Indicator families
 
-| Famille | Ce qu'elle mesure |
+| Family | What it measures |
 |---|---|
-| **Visée** | Taux de HS, précision, impacts et balles par kill, dégâts par kill |
-| **Armes** | Précision au spray, profil par catégorie, homogénéité entre armes |
-| **Niveau** | Performance rapportée aux heures de jeu, K/D, taux de MVP et de victoire |
-| **Compte** | Ancienneté, confidentialité, bibliothèque, empreinte sociale |
-| **Temps réel** | HS observés, ADR, multi-kills, rythme des éliminations, utilitaires |
-| **Régularité** | Variabilité des dégâts, cohérence historique vs partie en cours |
-| **Évolution** | Rupture de niveau entre deux relevés — le signal le plus spécifique |
-| **Sanctions** | Bannissements VAC et éditeur (factuel, non statistique) |
+| **Aim** | Headshot rate, accuracy, hits and bullets per kill, damage per kill |
+| **Weapons** | Spray accuracy, per-category profile, uniformity across weapons |
+| **Progression** | Performance relative to hours played, K/D, MVP and win rates |
+| **Account** | Age, privacy, library size, social footprint |
+| **Live** | Observed HS rate, ADR, multi-kills, kill rhythm, utility usage |
+| **Consistency** | Damage variance, lifetime stats vs. current match |
+| **Drift** | Skill jump between two snapshots — the most specific signal |
+| **Bans** | VAC and game bans (factual, not statistical) |
 
-> **Pourquoi l'évolution compte.** Un joueur avec 80 000 manches au compteur peut
-> doubler son taux de headshots sur ses 500 manches suivantes sans que sa moyenne
-> à vie bouge d'un point. Comparer deux relevés isole la période récente — et
-> contrairement à tous les autres signaux, un bond soudain ne s'explique **pas**
-> par un compte secondaire : un smurf est bon dès le premier relevé.
+> **Why drift matters.** A player with 80,000 rounds logged can double their
+> headshot rate over their next 500 rounds without their lifetime average
+> moving a single point. Comparing two snapshots isolates the recent period —
+> and unlike every other signal, a sudden jump is **not** explained by a smurf
+> account: a smurf is already good at the first snapshot.
 
-### Échelle
+### Scale
 
-| Score | Verdict | Lecture |
+| Score | Verdict | Reading |
 |---|---|---|
-| 0–29 | `CLEAN` | Rien ne distingue ce joueur de la population |
-| 30–49 | `LOW` | Quelques écarts mineurs |
-| 50–69 | `MODERATE` | Plusieurs signaux inhabituels |
-| 70–84 | `HIGH` | Comportement fortement atypique |
-| 85–100 | `CRITICAL` | Faisceau d'indices très lourd |
-| — | `INDÉTERMINÉ` | Données insuffisantes pour se prononcer |
+| 0–29 | `CLEAN` | Nothing sets this player apart from the population |
+| 30–49 | `LOW` | A few minor deviations |
+| 50–69 | `MODERATE` | Several unusual signals |
+| 70–84 | `HIGH` | Strongly atypical behaviour |
+| 85–100 | `CRITICAL` | A very heavy body of evidence |
+| — | `INDÉTERMINÉ` | Not enough data to make a call |
 
-### Faux positifs connus
+### Known false positives
 
-Le moteur les signale explicitement plutôt que de les masquer :
+The engine flags them explicitly rather than hiding them:
 
-- **comptes secondaires (smurfs)** — signature statistiquement identique à celle
-  d'un tricheur : compte jeune, peu d'heures, niveau élevé ;
-- **joueurs de niveau compétitif** — leurs statistiques sont réellement extrêmes ;
-- **styles atypiques** — AWP exclusif, entry fragger, joueur de soutien ;
-- **échantillons faibles** — d'où le lissage bayésien.
+- **smurf accounts** — statistically identical signature to a cheater: young
+  account, few hours, high skill;
+- **competitive-level players** — their stats genuinely are extreme;
+- **atypical playstyles** — AWP-only, entry fragger, support player;
+- **small samples** — hence the Bayesian smoothing.
 
-Détail complet : [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md).
-
----
-
-## Ce que l'application ne fait jamais
-
-- ❌ lire la mémoire du jeu
-- ❌ injecter du code dans le processus
-- ❌ modifier un fichier de CS2 autre que le `.cfg` GSI prévu par Valve
-- ❌ intercepter le trafic réseau du jeu
-- ❌ envoyer tes données ailleurs qu'à Steam
-
-Tout repose sur des données **publiques** et sur un mécanisme **officiel**.
+Full detail: [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md).
 
 ---
 
-## Développement
+## What this app never does
+
+- ❌ read the game's memory
+- ❌ inject code into the process
+- ❌ modify any CS2 file other than the GSI `.cfg` Valve provides for this
+- ❌ intercept the game's network traffic
+- ❌ send your data anywhere other than Steam
+
+Everything relies on **public** data and an **official** mechanism.
+
+---
+
+## Development
 
 ```powershell
 python -m pip install -r requirements-dev.txt
-python -m pytest                                  # 97 tests
-powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # construit l'exe
+python -m pytest                                                # 137 tests
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1     # build the exe
+powershell -ExecutionPolicy Bypass -File overlay\build.ps1       # build the overlay
+python packaging\make_icons.py                                   # regenerate icons
 ```
 
-Documentation technique :
+Technical documentation *(written in French)*:
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — structure du code et flux de données
-- [`docs/API.md`](docs/API.md) — référence des endpoints
-- [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md) — modèle de détection en détail
-- [`docs/GSI.md`](docs/GSI.md) — Game State Integration, portée et limites
-- [`ROADMAP.md`](ROADMAP.md) — améliorations envisagées
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — code structure and data flow
+- [`docs/API.md`](docs/API.md) — endpoint reference
+- [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md) — the detection model in detail
+- [`docs/GSI.md`](docs/GSI.md) — Game State Integration, scope and limits
+- [`overlay/README.md`](overlay/README.md) — the native overlay
+- [`ROADMAP.md`](ROADMAP.md) — planned improvements
+
+> The application interface is in French. Localisation is on the roadmap.
 
 ---
 
 ## Licence
 
-MIT — voir [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).
 
-Non affilié à Valve Corporation. Counter-Strike et Steam sont des marques de
-Valve Corporation.
+Not affiliated with, endorsed by, or sponsored by Valve Corporation.
+Counter-Strike and Steam are trademarks of Valve Corporation.
+
+The anti-cheat analysis is a statistical estimate based on publicly available
+data. It is not proof of cheating and must not be used to publicly accuse any
+player.
