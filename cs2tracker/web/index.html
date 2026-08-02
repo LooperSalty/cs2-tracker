@@ -88,14 +88,18 @@
             <div id="mine-drift"></div>
 
             <div class="tabs" role="tablist" id="mine-tabs">
-                <button class="tab" role="tab" aria-selected="true" data-panel="m-overview">Vue d'ensemble</button>
+                <button class="tab" role="tab" aria-selected="true" data-panel="m-visual">Visuel</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="m-overview">Vue d'ensemble</button>
                 <button class="tab" role="tab" aria-selected="false" data-panel="m-weapons">Armes</button>
                 <button class="tab" role="tab" aria-selected="false" data-panel="m-maps">Cartes</button>
                 <button class="tab" role="tab" aria-selected="false" data-panel="m-all">Toutes mes stats</button>
                 <button class="tab" role="tab" aria-selected="false" data-panel="m-trend">Evolution</button>
             </div>
 
-            <div class="panel active" data-panel="m-overview"><div class="table-wrap"><table class="data-table" id="tbl-mine-overview"></table></div></div>
+            <div class="panel active" data-panel="m-visual">
+                <div class="visual-grid" id="mine-visuals"></div>
+            </div>
+            <div class="panel" data-panel="m-overview"><div class="table-wrap"><table class="data-table" id="tbl-mine-overview"></table></div></div>
             <div class="panel" data-panel="m-weapons"><div class="table-wrap"><table class="data-table" id="tbl-mine-weapons"></table></div></div>
             <div class="panel" data-panel="m-maps"><div class="table-wrap"><table class="data-table" id="tbl-mine-maps"></table></div></div>
             <div class="panel" data-panel="m-all">
@@ -417,6 +421,7 @@
     </p>
 </dialog>
 
+<script src="/app/charts.js"></script>
 <script src="/app/app.js"></script>
 </body>
 </html>

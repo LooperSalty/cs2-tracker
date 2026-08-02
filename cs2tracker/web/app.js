@@ -145,7 +145,9 @@ function formatMetric(value, unit, digits = 0) {
  */
 function rankLabel(percentile, topPercent) {
     if (percentile >= 50) return `TOP ${topPercent}%`;
-    return `${percentile.toFixed(0)}ᵉ pct`;
+    // En dessous de la mediane, « TOP x % » se lirait comme une bonne nouvelle.
+    // On annonce donc la position par le bas, en toutes lettres.
+    return `DERNIERS ${percentile.toFixed(0)}%`;
 }
 
 /** Rang d'une arme dans sa categorie, ou tiret si non calculable. */
@@ -629,6 +631,48 @@ function profileParts(profile) {
     };
 }
 
+/**
+ * Precision moyenne de reference, par famille d'armes.
+ *
+ * Ces valeurs doublent celles du moteur (anticheat/baselines.py) : le radar a
+ * besoin d'un point de comparaison cote client, et les faire transiter par
+ * l'API pour trois decimales n'en vaut pas le detour.
+ */
+const CATEGORY_ACCURACY_BASELINE = {
+    "Fusil": 0.22,
+    "Pistolet": 0.24,
+    "SMG": 0.21,
+    "Sniper": 0.34,
+    "Fusil a pompe": 0.29,
+    "Mitrailleuse": 0.18,
+};
+
+//: En deca, la precision d'une famille n'est pas representative.
+const MIN_SHOTS_PER_CATEGORY = 500;
+
+/** Construit les axes du radar : precision observee rapportee a la moyenne. */
+function buildAccuracyAxes(weapons) {
+    const totals = {};
+    for (const weapon of weapons) {
+        const reference = CATEGORY_ACCURACY_BASELINE[weapon.category];
+        if (!reference) continue;
+        const bucket = totals[weapon.category] ||= { shots: 0, hits: 0 };
+        bucket.shots += weapon.shots_fired;
+        bucket.hits += weapon.shots_hit;
+    }
+
+    return Object.entries(totals)
+        .filter(([, bucket]) => bucket.shots >= MIN_SHOTS_PER_CATEGORY)
+        .map(([label, bucket]) => {
+            const accuracy = bucket.hits / bucket.shots;
+            return {
+                label,
+                ratio: accuracy / CATEGORY_ACCURACY_BASELINE[label],
+                accuracy,
+            };
+        });
+}
+
 /** Precise pourquoi un compte Steam local est propose. */
 function describeAccount(account) {
     if (account.auto_login) return "connexion automatique";
@@ -828,8 +872,106 @@ const mine = {
             { emptyText: "Aucune statistique par carte." }
         );
 
+        this.renderVisuals(profile);
         this.renderRaw(profile.raw_groups || [], profile.raw_count || 0);
         this.loadHistory();
+    },
+
+    /**
+     * Panneau visuel : silhouette des zones, repartition par famille d'armes,
+     * classements et radar de precision. Tout est derive de donnees reelles —
+     * aucune valeur n'est estimee pour combler un trou.
+     */
+    renderVisuals(profile) {
+        const host = $("#mine-visuals");
+        const { stats } = profileParts(profile);
+        const totals = stats.totals ?? {};
+        const ratios = stats.ratios ?? {};
+        const weapons = stats.weapons ?? [];
+        const maps = stats.maps ?? [];
+
+        if (!totals.kills) {
+            host.innerHTML = `
+                <p class="paste-help" style="grid-column:1/-1">
+                    Aucune statistique de jeu disponible : verifie que ton profil
+                    Steam est public (Profil → Confidentialite → Details du jeu).
+                </p>`;
+            return;
+        }
+
+        const sections = [];
+
+        // 1. Zones du corps.
+        sections.push(`
+            <div class="panel-card">
+                <span class="eyebrow">Ou tu touches</span>
+                ${bodyZones(ratios.headshot_rate, totals.kills)}
+            </div>`);
+
+        // 2. Repartition des kills par famille d'armes.
+        const byCategory = {};
+        for (const weapon of weapons) {
+            byCategory[weapon.category] = (byCategory[weapon.category] || 0) + weapon.kills;
+        }
+        const slices = Object.entries(byCategory)
+            .filter(([, value]) => value > 0)
+            .sort((a, b) => b[1] - a[1])
+            .map(([label, value]) => ({ label, value, color: categoryColor(label) }));
+
+        sections.push(`
+            <div class="panel-card">
+                <span class="eyebrow">Kills par famille d'armes</span>
+                ${donut(slices, "kills", int(totals.kills))}
+            </div>`);
+
+        // 3. Armes les plus meurtrieres.
+        sections.push(`
+            <div class="panel-card">
+                <span class="eyebrow">Tes armes les plus meurtrieres</span>
+                ${barList(
+                    weapons
+                        .filter((w) => w.kills > 0)
+                        .map((w) => ({
+                            label: w.name, value: w.kills,
+                            category: w.category, color: categoryColor(w.category),
+                        })),
+                    { limit: 10, showGlyph: true }
+                )}
+            </div>`);
+
+        // 4. Cartes les plus jouees.
+        sections.push(`
+            <div class="panel-card">
+                <span class="eyebrow">Cartes les plus jouees</span>
+                ${barList(
+                    maps
+                        .filter((m) => m.rounds_played > 0)
+                        .map((m) => ({
+                            label: m.name, value: m.rounds_played,
+                            color: m.win_rate >= 0.5 ? "var(--clean)" : "var(--t)",
+                        })),
+                    { limit: 8 }
+                )}
+                <p class="radar-caption">
+                    Vert : plus de 50 % de manches gagnees. Jaune : moins.
+                </p>
+            </div>`);
+
+        // 5. Radar de precision, compare a la reference de chaque famille.
+        const axes = buildAccuracyAxes(weapons);
+        if (axes.length >= 3) {
+            sections.push(`
+                <div class="panel-card">
+                    <span class="eyebrow">Precision par famille</span>
+                    ${radar(axes)}
+                    <p class="radar-caption">
+                        Le pointille gris est la moyenne des joueurs pour chaque
+                        famille. Au-dela, tu fais mieux ; en deca, moins bien.
+                    </p>
+                </div>`);
+        }
+
+        host.innerHTML = sections.join("");
     },
 
     /** Integralite des compteurs renvoyes par Steam, classes par famille. */
