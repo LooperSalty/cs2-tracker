@@ -234,7 +234,8 @@ Technical documentation *(written in French)*:
 - [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md) — the detection model in detail
 - [`docs/GSI.md`](docs/GSI.md) — Game State Integration, scope and limits
 - [`overlay/README.md`](overlay/README.md) — the native overlay
-- [`ROADMAP.md`](ROADMAP.md) — planned improvements
+- [`ROADMAP.md`](ROADMAP.md) — incremental improvements
+- [`IDEAS.md`](IDEAS.md) — ten major improvements, with what blocks each one
 
 > The application interface is in French. Localisation is on the roadmap.
 

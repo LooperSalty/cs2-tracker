@@ -237,7 +237,8 @@ Documentation technique :
 - [`docs/ANTICHEAT.md`](docs/ANTICHEAT.md) — modèle de détection en détail
 - [`docs/GSI.md`](docs/GSI.md) — Game State Integration, portée et limites
 - [`overlay/README.md`](overlay/README.md) — l'overlay natif
-- [`ROADMAP.md`](ROADMAP.md) — améliorations envisagées
+- [`ROADMAP.md`](ROADMAP.md) — améliorations incrémentales
+- [`IDEAS.md`](IDEAS.md) — dix améliorations majeures, et ce qui bloque chacune
 
 ---
 

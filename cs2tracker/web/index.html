@@ -231,6 +231,36 @@
                     <p style="color:var(--dust);font-size:11.5px;margin-top:12px">
                         Clique sur une ligne pour analyser ce joueur.
                     </p>
+
+                    <!-- Affiche des que CS2 ne transmet que le joueur local,
+                         c'est-a-dire dans toute partie hors spectateur. -->
+                    <div class="solo-notice" id="live-solo" hidden>
+                        <div class="solo-head">
+                            <span class="eyebrow">Pourquoi tu es seul dans ce tableau</span>
+                        </div>
+                        <p>
+                            En partie classique, CS2 ne transmet que <b>ton propre</b> etat.
+                            C'est une restriction volontaire de Valve : sans elle, le Game
+                            State Integration serait lui-meme un wallhack. Les donnees de
+                            tous les joueurs n'arrivent qu'en <b>spectateur</b> ou sur une
+                            retransmission <b>GOTV</b>.
+                        </p>
+                        <p class="solo-steps">
+                            Pour analyser quand meme tes neuf adversaires et coequipiers :
+                            ouvre la console avec <code>&#126;</code>, tape
+                            <code>status</code>, puis colle toute la sortie ici.
+                        </p>
+                        <textarea id="live-paste" rows="4" class="field"
+                                  aria-label="Sortie de la commande status"
+                                  placeholder="Colle ici la sortie de `status`"></textarea>
+                        <div class="setting-row" style="margin-top:10px">
+                            <button class="btn go" id="live-paste-run">Analyser ces joueurs</button>
+                            <span class="paste-help" id="live-paste-found" style="margin:0"></span>
+                        </div>
+                        <div class="table-wrap" id="live-paste-results" hidden style="margin-top:16px">
+                            <table class="data-table" id="tbl-live-paste"></table>
+                        </div>
+                    </div>
                 </div>
                 <div class="live-side">
                     <div class="eyebrow" style="margin-bottom:10px">Evenements</div>

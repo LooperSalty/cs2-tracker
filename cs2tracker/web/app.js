@@ -1440,9 +1440,14 @@ const live = {
                     $("#ac-query").value = row.steamid;
                     anticheat.run(row.steamid);
                 },
-                emptyText: "Aucun joueur transmis. En partie normale, seul ton propre etat est envoye.",
+                emptyText: "En attente du jeu.",
             }
         );
+
+        // CS2 ne transmet `allplayers` qu'en spectateur ou sur GOTV. Des que le
+        // tableau se limite au joueur local, on explique pourquoi et on propose
+        // le contournement sur place, plutot que de laisser un tableau vide.
+        $("#live-solo").hidden = rows.length > 1;
     },
 
     renderEvents(payload) {
@@ -1473,6 +1478,59 @@ function setNum(node, value) {
 $("#live-analyse").addEventListener("click", () => {
     showPage("anticheat");
     anticheat.runLiveLobby();
+});
+
+/** Analyse d'un lobby colle sans quitter la page temps reel. */
+$("#live-paste-run").addEventListener("click", async () => {
+    const text = $("#live-paste").value.trim();
+    if (!text) {
+        toast("Colle d'abord la sortie de la commande status.", "bad");
+        return;
+    }
+
+    const button = $("#live-paste-run");
+    button.disabled = true;
+    button.innerHTML = '<i class="spinner"></i>';
+    try {
+        const data = await api("/api/anticheat/lobby/paste", {
+            method: "POST",
+            body: { text, analyse: true },
+        });
+        if (!data.analysed) {
+            toast(data.message || "Aucun joueur exploitable dans ce collage.", "bad");
+            return;
+        }
+
+        $("#live-paste-results").hidden = false;
+        renderTable(
+            $("#tbl-live-paste"),
+            ["Joueur", "Risque", "Verdict", "Indicateur principal"],
+            (data.summary || []).map((entry) => ({
+                cells: [
+                    entry.name, Math.round(entry.score), entry.verdict, entry.top_reason,
+                ],
+                steamid: entry.steamid,
+                verdict: entry.verdict,
+            })),
+            {
+                rowClass: (row) => (
+                    ["HIGH", "CRITICAL"].includes(row.verdict) ? "is-selected" : ""
+                ),
+                onRowClick: (row) => {
+                    showPage("anticheat");
+                    $("#ac-query").value = row.steamid;
+                    anticheat.run(row.steamid);
+                },
+            }
+        );
+        $("#live-paste-found").textContent =
+            `${data.analysed} joueur(s) analyse(s) sur ${data.found} repere(s).`;
+    } catch (error) {
+        toast(error.message, "bad");
+    } finally {
+        button.disabled = false;
+        button.textContent = "Analyser ces joueurs";
+    }
 });
 
 /* ------------------------------------------------------------ page « matchs » */
