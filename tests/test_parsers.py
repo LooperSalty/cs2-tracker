@@ -172,6 +172,36 @@ def test_parse_owned_games_and_overview():
     assert 0.9 < overview.cs2_share_of_playtime < 1.0
 
 
+def test_group_raw_stats_keeps_everything():
+    """Aucune statistique ne doit disparaitre du regroupement."""
+    from cs2tracker.steam.parsers import group_raw_stats
+
+    raw = stats_list_to_map(stats_payload()["playerstats"]["stats"])
+    groups = group_raw_stats(raw)
+
+    regrouped = {
+        entry["name"] for group in groups for entry in group["stats"]
+    }
+    assert regrouped == set(raw)
+    assert sum(group["count"] for group in groups) == len(raw)
+
+
+def test_group_raw_stats_labels_are_meaningful():
+    from cs2tracker.steam.parsers import group_raw_stats
+
+    raw = stats_list_to_map(stats_payload()["playerstats"]["stats"])
+    labels = {group["key"] for group in group_raw_stats(raw)}
+    assert "combat" in labels
+    assert "armes" in labels
+    assert "cartes" in labels
+
+
+def test_group_raw_stats_on_empty_input():
+    from cs2tracker.steam.parsers import group_raw_stats
+
+    assert group_raw_stats({}) == []
+
+
 def test_parse_owned_games_handles_private_response():
     assert parse_owned_games({}) == ()
     assert parse_owned_games({"response": {}}) == ()

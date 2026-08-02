@@ -178,6 +178,36 @@ def test_gsi_preview_route(client):
     assert data["endpoint"].endswith("/gsi")
 
 
+# --- Identite de l'utilisateur ------------------------------------------------
+def test_identity_reports_local_accounts(client):
+    """La detection ne doit jamais lever, meme sans Steam installe."""
+    data = client.get("/api/me/identity").json()["data"]
+    assert "steamid64" in data
+    assert isinstance(data["candidates"], list)
+    assert data["confirmed"] is False
+
+
+def test_set_and_clear_me(client):
+    steamid = "76561198043717815"
+    saved = client.put("/api/me", json={"steamid64": steamid}).json()["data"]
+    assert saved["steamid64"] == steamid
+    assert saved["confirmed"] is True
+
+    identity = client.get("/api/me/identity").json()["data"]
+    assert identity["steamid64"] == steamid
+    assert identity["confirmed"] is True
+    assert identity["source"] == "choix enregistre"
+
+    cleared = client.delete("/api/me").json()["data"]
+    assert cleared["cleared"] is True
+    assert client.get("/api/me/identity").json()["data"]["confirmed"] is False
+
+
+def test_set_me_rejects_malformed_steamid(client):
+    assert client.put("/api/me", json={"steamid64": "123"}).status_code == 422
+    assert client.put("/api/me", json={"steamid64": "abcdefghijklmnopq"}).status_code == 422
+
+
 # --- Enregistrement de la cle Steam -------------------------------------------
 def test_steam_key_is_applied_without_restart(client):
     """La cle doit devenir utilisable sans relancer l'application.

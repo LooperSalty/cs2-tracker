@@ -89,6 +89,20 @@ class LobbyPasteRequest(BaseModel):
         return cleaned
 
 
+class SetMeRequest(BaseModel):
+    """Désignation manuelle du compte de l'utilisateur."""
+
+    steamid64: str = Field(..., min_length=17, max_length=17)
+
+    @field_validator("steamid64")
+    @classmethod
+    def check_steamid(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.isdigit():
+            raise ValueError("Un SteamID64 ne contient que des chiffres")
+        return cleaned
+
+
 class SteamKeyRequest(BaseModel):
     """Une clé Steam est une chaîne hexadécimale de 32 caractères."""
 

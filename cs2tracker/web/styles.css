@@ -390,6 +390,76 @@ a:hover { text-decoration: underline; }
 .overall-tier { font-size: 15px; font-weight: 700; }
 .overall-note { font-size: 12px; color: var(--ash); margin-top: 3px; }
 
+/* ------------------------------------------------ choix du compte personnel */
+.candidates {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 8px;
+    max-width: 760px;
+    margin: 0 auto;
+    text-align: left;
+}
+.candidate {
+    background: var(--plate);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 11px 13px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--bone);
+    text-align: left;
+    transition: border-color 120ms ease, background-color 120ms ease;
+}
+.candidate:hover { border-color: var(--flash); background: var(--rail); }
+.candidate:focus-visible { outline: 2px solid var(--flash); outline-offset: 2px; }
+.candidate-name { font-size: 13.5px; font-weight: 600; }
+.candidate-id {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--dust);
+    margin-top: 3px;
+}
+.candidate-note { font-size: 11px; color: var(--ash); margin-top: 4px; }
+
+/* ------------------------------------- integralite des compteurs Steam */
+.raw-group { margin-bottom: 26px; }
+.raw-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 10px;
+}
+.raw-count { font-family: var(--mono); font-size: 11px; color: var(--dust); }
+.raw-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0 26px;
+}
+.raw-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--plate);
+    font-size: 12px;
+}
+.raw-name {
+    font-family: var(--mono);
+    color: var(--ash);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.raw-value {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--bone);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 /* --------------------------------------------------------- courbes d'evolution */
 .chart-grid {
     display: grid;

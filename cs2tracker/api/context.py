@@ -19,6 +19,7 @@ from cs2tracker.storage.repositories import (
     AnalysisRepository,
     MatchRepository,
     PlayerRepository,
+    SettingsRepository,
     SnapshotRepository,
 )
 
@@ -36,6 +37,7 @@ class AppContext:
     snapshots: SnapshotRepository
     analyses: AnalysisRepository
     matches: MatchRepository
+    settings_repo: SettingsRepository
     recorder: MatchRecorder
     steam_client: SteamClient | None = None
     steam_service: SteamService | None = None
@@ -122,6 +124,7 @@ def build_context(settings: Settings) -> AppContext:
         snapshots=SnapshotRepository(database),
         analyses=AnalysisRepository(database),
         matches=matches,
+        settings_repo=SettingsRepository(database),
         recorder=MatchRecorder(matches, players, enabled=settings.record_matches),
         steam_client=steam_client,
         steam_service=steam_service,

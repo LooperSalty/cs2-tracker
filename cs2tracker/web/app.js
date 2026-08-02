@@ -161,6 +161,234 @@ function trendMark(gap) {
     return { arrow: "", cls: "" };
 }
 
+/* ------------------------------------ rendus partages entre pages de profil */
+
+/** Bandeau de rang global. `els` porte les trois elements a remplir. */
+function renderOverallBanner(els, percentiles, exportHref) {
+    if (!percentiles?.available) {
+        els.banner.hidden = true;
+        return;
+    }
+    els.banner.hidden = false;
+    els.figure.textContent = `${percentiles.overall_percentile}`;
+    els.figure.className = `overall-figure tier-${percentiles.overall_tier}`;
+    els.tier.textContent = `${percentiles.overall_tier_label} — ${
+        rankLabel(percentiles.overall_percentile, percentiles.overall_top_percent)}`;
+    els.tier.className = `overall-tier tier-${percentiles.overall_tier}`;
+
+    const sample = percentiles.sample || {};
+    els.note.textContent = sample.reliable
+        ? `Percentile moyen sur 10 metriques, calcule sur ${int(sample.rounds)} manches.`
+        : `Echantillon mince (${int(sample.rounds)} manches) : ce classement reste indicatif.`;
+
+    if (els.exportLink && exportHref) els.exportLink.href = exportHref;
+}
+
+/** Grille de tuiles : une par metrique, avec sa position dans la population. */
+function renderRankGrid(host, percentiles) {
+    if (!percentiles?.available) {
+        host.innerHTML = "";
+        return;
+    }
+    host.innerHTML = percentiles.metrics
+        .map((metric) => {
+            const shown = formatMetric(metric.value, metric.unit, 1);
+            const average = formatMetric(metric.average, metric.unit, 0);
+            return `
+            <div class="rank-tile">
+                <div class="rank-head">
+                    <span class="rank-value">${shown}</span>
+                    <span class="rank-top tier-${metric.tier}">${
+                        rankLabel(metric.percentile, metric.top_percent)}</span>
+                </div>
+                <div class="rank-label">${escapeAttr(metric.label)}</div>
+                <div class="rank-track">
+                    <div class="rank-fill bg-${metric.tier}" style="width:${metric.percentile}%"></div>
+                    <div class="rank-avg" title="Moyenne de la population"></div>
+                </div>
+                <div class="rank-foot">
+                    <span class="tier-${metric.tier}">${escapeAttr(metric.tier_label)}</span>
+                    <span>moy. ${average}</span>
+                </div>
+            </div>`;
+        })
+        .join("");
+}
+
+/** Bandeau d'evolution entre deux releves. */
+function renderDriftBanner(host, drift) {
+    if (!drift?.recent) {
+        host.innerHTML = "";
+        return;
+    }
+    const recent = drift.recent;
+    const delta = drift.delta || {};
+    const notable = Math.abs(delta.headshot_rate || 0) > 0.05
+        || Math.abs(delta.accuracy || 0) > 0.03;
+
+    const line = (label, value, gap, asPercent) => {
+        if (value === null || value === undefined) return "";
+        const shown = asPercent ? pct(value) : dec(value);
+        if (gap === null || gap === undefined) {
+            return `<span>${label} <b>${shown}</b></span>`;
+        }
+        const { arrow, cls } = trendMark(gap);
+        const amount = asPercent ? `${(gap * 100).toFixed(1)} pts` : gap.toFixed(2);
+        return `<span>${label} <b>${shown}</b> <span class="${cls}">${arrow} ${amount}</span></span>`;
+    };
+
+    host.innerHTML = `
+        <div class="drift ${notable ? "" : "calm"}">
+            <span class="eyebrow">Depuis le releve precedent</span>
+            ${int(recent.rounds)} manches jouees entre le ${shortDate(drift.from)}
+            et le ${shortDate(drift.to)}.
+            ${notable
+                ? "Le niveau sur cette periode s'ecarte nettement de l'historique du compte."
+                : "Le niveau sur cette periode reste conforme a l'historique du compte."}
+            <div class="drift-grid">
+                ${line("Headshots", recent.headshot_rate, delta.headshot_rate, true)}
+                ${line("Precision", recent.accuracy, delta.accuracy, true)}
+                ${line("Kills/manche", recent.kills_per_round, delta.kills_per_round, false)}
+                ${line("K/D", recent.kd, null, false)}
+            </div>
+        </div>`;
+}
+
+/** Lignes de la vue d'ensemble, communes aux deux pages de profil. */
+function buildOverviewRows(profile) {
+    const { stats, bans, account } = profileParts(profile);
+    const totals = stats.totals ?? {};
+    const ratios = stats.ratios ?? {};
+    const last = stats.last_match ?? {};
+    const achievements = profile.achievements ?? {};
+
+    return [
+        ["Eliminations", int(totals.kills)],
+        ["Morts", int(totals.deaths)],
+        ["Headshots", int(totals.headshot_kills)],
+        ["Balles tirees", int(totals.shots_fired)],
+        ["Balles au but", int(totals.shots_hit)],
+        ["Degats infliges", int(totals.damage_done)],
+        ["Argent gagne", `${int(totals.money_earned)} $`],
+        ["Manches jouees", int(totals.rounds_played)],
+        ["Manches gagnees", int(totals.rounds_won)],
+        ["Matchs joues", int(totals.matches_played)],
+        ["Matchs gagnes", int(totals.matches_won)],
+        ["MVP", int(totals.assists_proxy_mvps)],
+        ["Bombes posees", int(totals.bombs_planted)],
+        ["Bombes desamorcees", int(totals.bombs_defused)],
+        ["Otages liberes", int(totals.hostages_rescued)],
+        ["Manches pistolet gagnees", int(totals.pistol_rounds_won)],
+        ["Score de contribution", int(totals.contribution_score)],
+        ["Temps de jeu", `${int(totals.hours_played)} h`],
+        ["Impacts par kill", dec(ratios.hits_per_kill)],
+        ["Balles par kill", dec(ratios.shots_per_kill, 1)],
+        ["Degats par kill", dec(ratios.damage_per_kill, 1)],
+        ["Degats par manche", dec(ratios.damage_per_round, 1)],
+        ["Kills par heure", dec(ratios.kills_per_hour, 1)],
+        ["Taux de MVP", pct(ratios.mvp_rate, 2)],
+        ["Manches gagnees", pct(ratios.round_win_rate, 2)],
+        ["Matchs gagnes", pct(ratios.match_win_rate, 2)],
+        ["Taux de pose de bombe", pct(ratios.bomb_plant_rate, 2)],
+        ["Dernier match — K/D", dec(last.kd)],
+        ["Dernier match — ADR", dec(last.adr, 1)],
+        ["Dernier match — kills", int(last.kills)],
+        ["Dernier match — MVP", int(last.mvps)],
+        ["Dernier match — arme favorite", last.favourite_weapon || "—"],
+        ["Succes", `${achievements.unlocked ?? 0} / ${achievements.total ?? 0}`],
+        ["Bannissements VAC", int(bans.number_of_vac_bans)],
+        ["Bannissements editeur", int(bans.number_of_game_bans)],
+        ["Jours depuis la sanction", bans.total_bans ? int(bans.days_since_last_ban) : "—"],
+        ["Part de CS2 dans le temps de jeu", pct(account.cs2_share_of_playtime)],
+    ];
+}
+
+/** Tableau des armes, avec le rang de chacune dans sa propre categorie. */
+function buildWeaponRows(weapons, rankings = {}) {
+    return weapons.map((w) => [
+        w.name, w.category, int(w.kills), int(w.shots_fired), int(w.shots_hit),
+        pct(w.accuracy), weaponRank(w.ranking || rankings[w.key]),
+        dec(w.shots_per_kill, 1),
+    ]);
+}
+
+const WEAPON_HEADERS = [
+    "Arme", "Categorie", "Kills", "Tirs", "Impacts", "Precision", "Rang", "Balles/kill",
+];
+
+/** Courbes d'evolution a partir des releves horodates. */
+function renderTrendCharts(host, snapshots) {
+    // Les releves arrivent du plus recent au plus ancien : on retablit l'ordre
+    // chronologique pour que les courbes se lisent de gauche a droite.
+    const ordered = [...snapshots].reverse();
+
+    if (ordered.length < 2) {
+        host.innerHTML = `
+            <p class="paste-help" style="grid-column:1/-1">
+                Une seule mesure disponible. Chaque consultation enregistre un
+                releve : les courbes apparaitront des le deuxieme.
+            </p>`;
+        return;
+    }
+
+    const series = [
+        { key: "kd_ratio", label: "Ratio K/D", color: "var(--flash)", asPercent: false },
+        { key: "headshot_rate", label: "Headshots", color: "var(--clean)", asPercent: true },
+        { key: "accuracy", label: "Precision", color: "var(--ct)", asPercent: true },
+    ];
+
+    host.innerHTML = series
+        .map((entry) => {
+            const values = ordered.map((s) => Number(s[entry.key]) || 0);
+            const current = values.at(-1);
+            const shown = entry.asPercent ? pct(current) : dec(current, 3);
+            return `
+            <div class="chart">
+                <div class="chart-title">
+                    <span class="eyebrow">${entry.label}</span>
+                    <span class="chart-now" style="color:${entry.color}">${shown}</span>
+                </div>
+                ${sparkline(values, entry.color)}
+                <div class="chart-foot">
+                    <span>${shortDate(ordered[0].captured_at)}</span>
+                    <span>${ordered.length} releves</span>
+                    <span>${shortDate(ordered.at(-1).captured_at)}</span>
+                </div>
+            </div>`;
+        })
+        .join("");
+}
+
+const HISTORY_HEADERS = [
+    "Releve", "Kills", "Morts", "Manches", "K/D", "HS", "Precision",
+];
+
+function buildHistoryRows(snapshots) {
+    return snapshots.map((s) => [
+        shortDate(s.captured_at), int(s.kills), int(s.deaths), int(s.rounds_played),
+        dec(s.kd_ratio, 3), pct(s.headshot_rate), pct(s.accuracy),
+    ]);
+}
+
+/**
+ * Charge l'historique d'un joueur et remplit tableau et courbes.
+ *
+ * L'historique n'est qu'un complement : une erreur ne doit pas empecher le
+ * reste du profil de s'afficher.
+ */
+async function loadProfileHistory(steamid, tableEl, chartsEl, emptyText) {
+    try {
+        const data = await api(`/api/players/${steamid}/history`);
+        const snapshots = data.snapshots || [];
+        renderTable(tableEl, HISTORY_HEADERS, buildHistoryRows(snapshots), { emptyText });
+        renderTrendCharts(chartsEl, snapshots);
+    } catch (error) {
+        renderTable(tableEl, HISTORY_HEADERS, [], {
+            emptyText: `Historique indisponible : ${error.message}`,
+        });
+    }
+}
+
 /* ------------------------------------------------------------------- routeur */
 
 function showPage(name) {
@@ -170,6 +398,7 @@ function showPage(name) {
         else item.removeAttribute("aria-current");
     });
     if (name === "live") live.start(); else live.stop();
+    if (name === "mine") mine.load();
     if (name === "matches") matches.load();
     if (name === "settings") {
         settings.refresh();
@@ -216,7 +445,7 @@ const player = {
     },
 
     render(profile) {
-        const { identity = {}, summary = {}, bans = {}, stats = {}, account = {} } = profile;
+        const { identity, summary, bans, stats, account } = profileParts(profile);
         this.steamid = identity.steamid64 || "";
         $("#player-analyse").disabled = !this.steamid;
         $("#player-empty").hidden = true;
@@ -253,166 +482,34 @@ const player = {
         if (summary.playing_cs2) addTag("En jeu sur CS2", "hot");
         else if (summary.in_game) addTag(summary.game_extra_info || "En jeu", "");
 
-        this.renderOverall(profile.percentiles);
-        this.renderRanks(profile.percentiles);
-        this.renderDrift(profile.drift);
-        this.renderOverview(profile);
+        renderOverallBanner(
+            {
+                banner: $("#player-overall"),
+                figure: $("#overall-figure"),
+                tier: $("#overall-tier"),
+                note: $("#overall-note"),
+                exportLink: $("#export-csv"),
+            },
+            profile.percentiles,
+            `/api/players/${this.steamid}/export.csv`
+        );
+        renderRankGrid($("#player-ranks"), profile.percentiles);
+        renderDriftBanner($("#player-drift"), profile.drift);
+        renderTable($("#tbl-overview"), ["Indicateur", "Valeur"], buildOverviewRows(profile));
+        renderTable(
+            $("#tbl-maps"),
+            ["Carte", "Manches", "Victoires", "Taux"],
+            (stats.maps || []).map((m) => [
+                m.name, int(m.rounds_played), int(m.wins), pct(m.win_rate),
+            ]),
+            { emptyText: "Aucune statistique par carte." }
+        );
         this.renderWeapons(stats.weapons || []);
-        this.renderMaps(stats.maps || []);
         this.loadLibrary();
         this.loadHistory();
     },
 
-    /**
-     * Bandeau de rang global : la position du joueur dans la population est
-     * l'information dominante de la page, pas ses chiffres bruts.
-     */
-    renderOverall(percentiles) {
-        const banner = $("#player-overall");
-        if (!percentiles?.available) {
-            banner.hidden = true;
-            return;
-        }
-        banner.hidden = false;
-        const figure = $("#overall-figure");
-        figure.textContent = `${percentiles.overall_percentile}`;
-        figure.className = `overall-figure tier-${percentiles.overall_tier}`;
-
-        $("#overall-tier").textContent = `${percentiles.overall_tier_label} — ${
-            rankLabel(percentiles.overall_percentile, percentiles.overall_top_percent)
-        }`;
-        $("#overall-tier").className = `overall-tier tier-${percentiles.overall_tier}`;
-
-        const sample = percentiles.sample || {};
-        $("#overall-note").textContent = sample.reliable
-            ? `Percentile moyen sur 10 metriques, calcule sur ${int(sample.rounds)} manches.`
-            : `Echantillon mince (${int(sample.rounds)} manches) : ce classement reste indicatif.`;
-
-        $("#export-csv").href = `/api/players/${this.steamid}/export.csv`;
-    },
-
-    /** Une tuile par métrique : valeur, percentile et repère de la moyenne. */
-    renderRanks(percentiles) {
-        const grid = $("#player-ranks");
-        if (!percentiles?.available) {
-            grid.innerHTML = "";
-            return;
-        }
-
-        grid.innerHTML = percentiles.metrics
-            .map((metric) => {
-                const shown = formatMetric(metric.value, metric.unit, 1);
-                const average = formatMetric(metric.average, metric.unit, 0);
-                return `
-                <div class="rank-tile">
-                    <div class="rank-head">
-                        <span class="rank-value">${shown}</span>
-                        <span class="rank-top tier-${metric.tier}">${rankLabel(metric.percentile, metric.top_percent)}</span>
-                    </div>
-                    <div class="rank-label">${escapeAttr(metric.label)}</div>
-                    <div class="rank-track">
-                        <div class="rank-fill bg-${metric.tier}" style="width:${metric.percentile}%"></div>
-                        <div class="rank-avg" title="Moyenne de la population"></div>
-                    </div>
-                    <div class="rank-foot">
-                        <span class="tier-${metric.tier}">${escapeAttr(metric.tier_label)}</span>
-                        <span>moy. ${average}</span>
-                    </div>
-                </div>`;
-            })
-            .join("");
-    },
-
-    /** Évolution entre deux relevés — ce que les stats à vie ne montrent pas. */
-    renderDrift(drift) {
-        const host = $("#player-drift");
-        if (!drift?.recent) {
-            host.innerHTML = "";
-            return;
-        }
-
-        const recent = drift.recent;
-        const delta = drift.delta || {};
-        const notable = Math.abs(delta.headshot_rate || 0) > 0.05
-            || Math.abs(delta.accuracy || 0) > 0.03;
-
-        const line = (label, value, gap, asPercent) => {
-            if (value === null || value === undefined) return "";
-            const shown = asPercent ? pct(value) : dec(value);
-            if (gap === null || gap === undefined) {
-                return `<span>${label} <b>${shown}</b></span>`;
-            }
-            const { arrow, cls } = trendMark(gap);
-            const amount = asPercent ? `${(gap * 100).toFixed(1)} pts` : gap.toFixed(2);
-            return `<span>${label} <b>${shown}</b> <span class="${cls}">${arrow} ${amount}</span></span>`;
-        };
-
-        host.innerHTML = `
-            <div class="drift ${notable ? "" : "calm"}">
-                <span class="eyebrow">Depuis le releve precedent</span>
-                ${int(recent.rounds)} manches jouees entre le
-                ${shortDate(drift.from)} et le ${shortDate(drift.to)}.
-                ${notable
-                    ? "Le niveau sur cette periode s'ecarte nettement de l'historique du compte."
-                    : "Le niveau sur cette periode reste conforme a l'historique du compte."}
-                <div class="drift-grid">
-                    ${line("Headshots", recent.headshot_rate, delta.headshot_rate, true)}
-                    ${line("Precision", recent.accuracy, delta.accuracy, true)}
-                    ${line("Kills/manche", recent.kills_per_round, delta.kills_per_round, false)}
-                    ${line("K/D", recent.kd, null, false)}
-                </div>
-            </div>`;
-    },
-
-    renderOverview(profile) {
-        const stats = profile.stats || {};
-        const totals = stats.totals || {};
-        const ratios = stats.ratios || {};
-        const last = stats.last_match || {};
-        const bans = profile.bans || {};
-        const account = profile.account || {};
-        const achievements = profile.achievements || {};
-
-        const rows = [
-            ["Eliminations", int(totals.kills)],
-            ["Morts", int(totals.deaths)],
-            ["Headshots", int(totals.headshot_kills)],
-            ["Balles tirees", int(totals.shots_fired)],
-            ["Balles au but", int(totals.shots_hit)],
-            ["Degats infliges", int(totals.damage_done)],
-            ["Argent gagne", `${int(totals.money_earned)} $`],
-            ["Manches jouees", int(totals.rounds_played)],
-            ["Manches gagnees", int(totals.rounds_won)],
-            ["Matchs joues", int(totals.matches_played)],
-            ["Matchs gagnes", int(totals.matches_won)],
-            ["MVP", int(totals.assists_proxy_mvps)],
-            ["Bombes posees", int(totals.bombs_planted)],
-            ["Bombes desamorcees", int(totals.bombs_defused)],
-            ["Manches pistolet gagnees", int(totals.pistol_rounds_won)],
-            ["Impacts par kill", dec(ratios.hits_per_kill)],
-            ["Balles par kill", dec(ratios.shots_per_kill, 1)],
-            ["Degats par kill", dec(ratios.damage_per_kill, 1)],
-            ["Kills par heure", dec(ratios.kills_per_hour, 1)],
-            ["Taux de MVP", pct(ratios.mvp_rate, 2)],
-            ["Manches gagnees", pct(ratios.round_win_rate, 2)],
-            ["Matchs gagnes", pct(ratios.match_win_rate, 2)],
-            ["Dernier match — K/D", dec(last.kd)],
-            ["Dernier match — ADR", dec(last.adr, 1)],
-            ["Dernier match — arme favorite", last.favourite_weapon || "—"],
-            ["Succes", `${achievements.unlocked ?? 0} / ${achievements.total ?? 0}`],
-            ["Bannissements VAC", int(bans.number_of_vac_bans)],
-            ["Bannissements editeur", int(bans.number_of_game_bans)],
-            ["Jours depuis la sanction", bans.total_bans ? int(bans.days_since_last_ban) : "—"],
-            ["Part de CS2 dans le temps de jeu", pct(account.cs2_share_of_playtime)],
-        ];
-        renderTable($("#tbl-overview"), ["Indicateur", "Valeur"], rows);
-    },
-
     async renderWeapons(fallback) {
-        const headers = [
-            "Arme", "Categorie", "Kills", "Tirs", "Impacts", "Precision",
-            "Rang", "Balles/kill",
-        ];
         let weapons = fallback;
         try {
             // L'endpoint dedie ajoute le classement de chaque arme dans sa
@@ -423,26 +520,9 @@ const player = {
             /* Profil restreint : on garde les donnees deja chargees. */
         }
 
-        renderTable(
-            $("#tbl-weapons"),
-            headers,
-            weapons.map((w) => [
-                w.name, w.category, int(w.kills), int(w.shots_fired), int(w.shots_hit),
-                pct(w.accuracy),
-                weaponRank(w.ranking),
-                dec(w.shots_per_kill, 1),
-            ]),
-            { emptyText: "Aucune statistique par arme sur ce profil." }
-        );
-    },
-
-    renderMaps(maps) {
-        renderTable(
-            $("#tbl-maps"),
-            ["Carte", "Manches", "Victoires", "Taux"],
-            maps.map((m) => [m.name, int(m.rounds_played), int(m.wins), pct(m.win_rate)]),
-            { emptyText: "Aucune statistique par carte." }
-        );
+        renderTable($("#tbl-weapons"), WEAPON_HEADERS, buildWeaponRows(weapons), {
+            emptyText: "Aucune statistique par arme sur ce profil.",
+        });
     },
 
     async loadLibrary() {
@@ -463,67 +543,11 @@ const player = {
         }
     },
 
-    async loadHistory() {
-        try {
-            const data = await api(`/api/players/${this.steamid}/history`);
-            const snapshots = data.snapshots || [];
-            renderTable(
-                $("#tbl-history"),
-                ["Releve", "Kills", "Morts", "Manches", "K/D", "HS", "Precision"],
-                snapshots.map((s) => [
-                    shortDate(s.captured_at), int(s.kills), int(s.deaths), int(s.rounds_played),
-                    dec(s.kd_ratio, 3), pct(s.headshot_rate), pct(s.accuracy),
-                ]),
-                { emptyText: "Premier releve enregistre. Reviens plus tard pour suivre la progression." }
-            );
-            this.renderCharts(snapshots);
-        } catch (error) {
-            toast(error.message, "bad");
-        }
-    },
-
-    renderCharts(snapshots) {
-        const host = $("#player-charts");
-        // Les releves arrivent du plus recent au plus ancien : on remet dans
-        // l'ordre chronologique pour que les courbes se lisent de gauche a droite.
-        const ordered = [...snapshots].reverse();
-
-        if (ordered.length < 2) {
-            host.innerHTML = `
-                <p class="paste-help" style="grid-column:1/-1">
-                    Une seule mesure disponible. Consulte ce profil regulierement :
-                    chaque visite enregistre un releve, et les courbes apparaitront
-                    des le deuxieme.
-                </p>`;
-            return;
-        }
-
-        const series = [
-            { key: "kd_ratio", label: "Ratio K/D", color: "var(--flash)", asPercent: false },
-            { key: "headshot_rate", label: "Headshots", color: "var(--clean)", asPercent: true },
-            { key: "accuracy", label: "Precision", color: "var(--ct)", asPercent: true },
-        ];
-
-        host.innerHTML = series
-            .map((entry) => {
-                const values = ordered.map((s) => Number(s[entry.key]) || 0);
-                const current = values.at(-1);
-                const shown = entry.asPercent ? pct(current) : dec(current, 3);
-                return `
-                <div class="chart">
-                    <div class="chart-title">
-                        <span class="eyebrow">${entry.label}</span>
-                        <span class="chart-now" style="color:${entry.color}">${shown}</span>
-                    </div>
-                    ${sparkline(values, entry.color)}
-                    <div class="chart-foot">
-                        <span>${shortDate(ordered[0].captured_at)}</span>
-                        <span>${ordered.length} releves</span>
-                        <span>${shortDate(ordered.at(-1).captured_at)}</span>
-                    </div>
-                </div>`;
-            })
-            .join("");
+    loadHistory() {
+        return loadProfileHistory(
+            this.steamid, $("#tbl-history"), $("#player-charts"),
+            "Premier releve enregistre. Reviens plus tard pour suivre la progression."
+        );
     },
 };
 
@@ -577,6 +601,255 @@ $("#player-analyse").addEventListener("click", () => {
     showPage("anticheat");
     $("#ac-query").value = player.steamid;
     anticheat.run(player.steamid);
+});
+
+/* ---------------------------------------------------------- page « mes stats » */
+
+/**
+ * Profil personnel.
+ *
+ * L'identite est devinee a partir de la machine — partie CS2 en cours, session
+ * Steam ouverte, ou historique de connexion — puis memorisee. L'utilisateur
+ * n'a donc jamais a ressaisir son SteamID.
+ */
+/**
+ * Extrait les blocs d'un profil en neutralisant les valeurs nulles.
+ *
+ * Une valeur par defaut de destructuration ne s'applique que si la cle vaut
+ * `undefined`. Or l'API renvoie explicitement `null` pour une source
+ * indisponible — profil prive, appel Steam en echec — et `null.avatar` leve.
+ */
+function profileParts(profile) {
+    return {
+        identity: profile.identity ?? {},
+        summary: profile.summary ?? {},
+        bans: profile.bans ?? {},
+        stats: profile.stats ?? {},
+        account: profile.account ?? {},
+    };
+}
+
+/** Precise pourquoi un compte Steam local est propose. */
+function describeAccount(account) {
+    if (account.auto_login) return "connexion automatique";
+    if (!account.last_used) return "";
+    const when = new Date(account.last_used * 1000).toISOString();
+    return `derniere connexion ${shortDate(when)}`;
+}
+
+const mine = {
+    loaded: false,
+    steamid: "",
+
+    async load(force = false) {
+        if (this.loaded && !force) return;
+
+        $("#mine-empty").hidden = false;
+        $("#mine-setup").hidden = true;
+        try {
+            const profile = await api("/api/me");
+            this.render(profile);
+            this.loaded = true;
+        } catch (error) {
+            $("#mine-empty").hidden = true;
+            await this.showSetup(error.message);
+        }
+    },
+
+    /**
+     * Ecran de secours.
+     *
+     * Deux causes tres differentes menent ici : l'absence de cle API Steam, et
+     * l'incertitude sur le compte a utiliser. Les confondre serait trompeur —
+     * choisir un compte ne sert a rien tant qu'aucune cle n'est configuree.
+     */
+    async showSetup(reason) {
+        // On efface toute trace d'un profil precedemment affiche.
+        $("#mine-identity").hidden = true;
+        $("#mine-overall").hidden = true;
+        $("#mine-ranks").innerHTML = "";
+        $("#mine-drift").innerHTML = "";
+        $("#mine-setup").hidden = false;
+
+        const missingKey = /cle api steam/i.test(reason || "");
+        $("#mine-setup-title").textContent = missingKey
+            ? "Cle API Steam manquante"
+            : "Quel compte est le tien ?";
+        $("#mine-setup-reason").textContent = missingKey
+            ? reason
+            : (reason || "Plusieurs comptes Steam sont connus sur ce PC. Choisis le tien.");
+        // Sans cle, choisir un compte ne servirait a rien : on n'affiche que
+        // le raccourci vers la configuration.
+        $("#mine-setup-fix").hidden = !missingKey;
+        $("#mine-candidates").hidden = missingKey;
+        $("#mine-manual-row").hidden = missingKey;
+        if (missingKey) {
+            $("#mine-candidates").innerHTML = "";
+            return;
+        }
+
+        try {
+            const identity = await api("/api/me/identity");
+            const candidates = identity.candidates || [];
+            $("#mine-candidates").innerHTML = candidates.length
+                ? candidates
+                    .map((account) => {
+                        const name = account.persona_name || account.account_name
+                            || "Compte sans nom";
+                        const note = describeAccount(account);
+                        return `
+                        <button class="candidate" data-steamid="${escapeAttr(account.steamid64)}">
+                            <div class="candidate-name">${escapeAttr(name)}</div>
+                            <div class="candidate-id">${escapeAttr(account.steamid64)}</div>
+                            <div class="candidate-note">${escapeAttr(note)}</div>
+                        </button>`;
+                    })
+                    .join("")
+                : `<p class="paste-help">Aucun compte Steam detecte sur ce PC.</p>`;
+
+            $$("#mine-candidates .candidate").forEach((button) =>
+                button.addEventListener("click", () => this.choose(button.dataset.steamid))
+            );
+        } catch {
+            if (reason) toast(reason, "bad");
+        }
+    },
+
+    async choose(steamid64) {
+        try {
+            await api("/api/me", { method: "PUT", body: { steamid64 } });
+            $("#mine-setup").hidden = true;
+            this.loaded = false;
+            await this.load(true);
+            toast("Compte enregistre.", "ok");
+        } catch (error) {
+            toast(error.message, "bad");
+        }
+    },
+
+    async forget() {
+        try {
+            await api("/api/me", { method: "DELETE" });
+            this.loaded = false;
+            $("#mine-identity").hidden = true;
+            $("#mine-overall").hidden = true;
+            await this.showSetup("");
+        } catch (error) {
+            toast(error.message, "bad");
+        }
+    },
+
+    render(profile) {
+        const { identity, summary, bans, stats, account } = profileParts(profile);
+        this.steamid = identity.steamid64 || "";
+
+        $("#mine-empty").hidden = true;
+        $("#mine-setup").hidden = true;
+        $("#mine-identity").hidden = false;
+
+        if (typeof summary.avatar === "string" && summary.avatar.startsWith("https://")) {
+            $("#mine-avatar").src = summary.avatar;
+        }
+        $("#mine-name").textContent = summary.persona_name || "Profil sans nom";
+        $("#mine-ids").textContent = [identity.steamid64, identity.steamid3, identity.steamid2]
+            .filter(Boolean).join("   ");
+
+        const meta = [];
+        if (profile.source) meta.push(`detecte via ${profile.source}`);
+        if (summary.time_created) meta.push(`compte cree le ${summary.time_created.slice(0, 10)}`);
+        if (account.cs2_hours) meta.push(`${int(account.cs2_hours)} h sur CS2`);
+        if (account.cs2_hours_2weeks) meta.push(`${dec(account.cs2_hours_2weeks, 1)} h ces 2 semaines`);
+        $("#mine-meta").textContent = meta.join("   ·   ");
+
+        const tags = $("#mine-tags");
+        tags.innerHTML = "";
+        const addTag = (text, kind) => {
+            const node = document.createElement("span");
+            setTag(node, text, kind);
+            tags.append(node);
+        };
+        addTag(summary.is_public ? "Profil public" : "Profil prive",
+               summary.is_public ? "ok" : "warn");
+        addTag(bans.has_any_ban ? `${bans.total_bans} sanction(s)` : "Aucune sanction",
+               bans.has_any_ban ? "bad" : "ok");
+        if (summary.playing_cs2) addTag("En jeu sur CS2", "hot");
+
+        renderOverallBanner(
+            {
+                banner: $("#mine-overall"),
+                figure: $("#mine-overall-figure"),
+                tier: $("#mine-overall-tier"),
+                note: $("#mine-overall-note"),
+                exportLink: $("#mine-export"),
+            },
+            profile.percentiles,
+            "/api/me/export.csv"
+        );
+        renderRankGrid($("#mine-ranks"), profile.percentiles);
+        renderDriftBanner($("#mine-drift"), profile.drift);
+
+        renderTable($("#tbl-mine-overview"), ["Indicateur", "Valeur"],
+                    buildOverviewRows(profile));
+        renderTable(
+            $("#tbl-mine-weapons"), WEAPON_HEADERS,
+            buildWeaponRows(stats.weapons || [], profile.weapon_rankings || {}),
+            { emptyText: "Aucune statistique par arme." }
+        );
+        renderTable(
+            $("#tbl-mine-maps"), ["Carte", "Manches", "Victoires", "Taux"],
+            (stats.maps || []).map((m) => [
+                m.name, int(m.rounds_played), int(m.wins), pct(m.win_rate),
+            ]),
+            { emptyText: "Aucune statistique par carte." }
+        );
+
+        this.renderRaw(profile.raw_groups || [], profile.raw_count || 0);
+        this.loadHistory();
+    },
+
+    /** Integralite des compteurs renvoyes par Steam, classes par famille. */
+    renderRaw(groups, total) {
+        $("#mine-raw-count").textContent = total
+            ? `${total} statistiques renvoyees par Steam, sans exception.`
+            : "";
+
+        $("#mine-raw").innerHTML = groups.length
+            ? groups
+                .map((group) => `
+                <section class="raw-group">
+                    <div class="raw-head">
+                        <span class="eyebrow">${escapeAttr(group.label)}</span>
+                        <span class="raw-count">${group.count}</span>
+                    </div>
+                    <div class="raw-list">
+                        ${group.stats.map((entry) => `
+                            <div class="raw-row">
+                                <span class="raw-name" title="${escapeAttr(entry.name)}">${escapeAttr(entry.name)}</span>
+                                <span class="raw-value">${int(entry.value)}</span>
+                            </div>`).join("")}
+                    </div>
+                </section>`)
+                .join("")
+            : `<p class="paste-help">Aucune statistique brute disponible.</p>`;
+    },
+
+    loadHistory() {
+        return loadProfileHistory(
+            this.steamid, $("#tbl-mine-history"), $("#mine-charts"),
+            "Premier releve enregistre. Reviens apres quelques parties."
+        );
+    },
+};
+
+$("#mine-not-me").addEventListener("click", () => mine.forget());
+$("#mine-goto-settings").addEventListener("click", () => showPage("settings"));
+$("#mine-manual-save").addEventListener("click", () => {
+    const value = $("#mine-manual").value.trim();
+    if (!/^\d{17}$/.test(value)) {
+        toast("Un SteamID64 fait 17 chiffres.", "bad");
+        return;
+    }
+    mine.choose(value);
 });
 
 /* -------------------------------------------------- signature : nuage de points */
@@ -1381,4 +1654,6 @@ $("#clear-cache").addEventListener("click", async () => {
 
 settings.refresh();
 setInterval(() => settings.refresh(), 6000);
-$("#player-query").focus();
+
+// « Mes stats » est la page d'accueil : on la charge sans attendre un clic.
+mine.load();

@@ -9,6 +9,13 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at  TEXT    NOT NULL
 );
 
+-- Préférences applicatives (clé/valeur) --------------------------------------
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Joueurs suivis --------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS players (
     steamid64     TEXT PRIMARY KEY,

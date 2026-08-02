@@ -251,6 +251,89 @@ def parse_achievements(payload: Mapping[str, Any]) -> tuple[int, int]:
     return (unlocked, len(achievements))
 
 
+#: Compteurs globaux, désignés par leur nom **exact**.
+#:
+#: Le nom exact est indispensable : ``total_kills`` est un préfixe de
+#: ``total_kills_ak47``, et une correspondance par sous-chaîne rangerait toutes
+#: les statistiques d'armes dans « Combat ».
+_COMBAT_STATS: frozenset[str] = frozenset(
+    {
+        "total_kills", "total_deaths", "total_damage_done", "total_shots_fired",
+        "total_shots_hit", "total_wins", "total_rounds_played", "total_mvps",
+        "total_contribution_score", "total_matches_played", "total_matches_won",
+        "total_time_played", "total_money_earned", "total_kills_headshot",
+        "total_wins_pistolround", "total_weapons_donated",
+    }
+)
+
+#: Familles reconnues par sous-chaîne, **ordre significatif** : les plus
+#: spécifiques d'abord, chacune retirant ses entrées du lot restant.
+_RAW_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("dernier_match", "Dernier match", ("last_match_",)),
+    ("cartes", "Cartes", ("_map_",)),
+    ("armes", "Armes", ("_ak47", "_m4a1", "_awp", "_deagle", "_glock", "_usp",
+                        "_p250", "_famas", "_galil", "_aug", "_sg55", "_ssg",
+                        "_scar", "_g3sg1", "_nova", "_xm1014", "_mag7", "_sawed",
+                        "_mac10", "_mp7", "_mp9", "_ump45", "_p90", "_bizon",
+                        "_mp5sd", "_m249", "_negev", "_elite", "_fiveseven",
+                        "_tec9", "_cz75a", "_revolver", "_hkp2000", "_knife",
+                        "_taser", "_hegrenade", "_molotov", "_decoy",
+                        "_flashbang", "_smokegrenade")),
+    ("objectifs", "Objectifs", ("bomb", "hostage", "defus", "plant", "rescue")),
+    ("progression", "Progression et succes", ("total_progressive", "GI.lesson",
+                                              "steel_", "leader_", "expert_")),
+)
+
+
+def _as_group(key: str, label: str, entries: Mapping[str, int]) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "count": len(entries),
+        "stats": [
+            {"name": name, "value": value} for name, value in sorted(entries.items())
+        ],
+    }
+
+
+def group_raw_stats(raw: Mapping[str, int]) -> list[dict[str, Any]]:
+    """Classe l'intégralité des statistiques Steam en familles lisibles.
+
+    Steam renvoie environ deux cents compteurs. Les présenter tels quels serait
+    inexploitable ; les regrouper permet de tout montrer sans noyer le lecteur.
+    Aucune statistique n'est écartée : ce qui ne correspond à aucune famille
+    atterrit dans « Autres ».
+    """
+    remaining = dict(raw)
+    groups: list[dict[str, Any]] = []
+
+    # Les compteurs globaux sont preleves par nom exact, avant toute
+    # correspondance par sous-chaine.
+    combat = {
+        name: value for name, value in remaining.items() if name in _COMBAT_STATS
+    }
+    for name in combat:
+        del remaining[name]
+    if combat:
+        groups.append(_as_group("combat", "Combat", combat))
+
+    for key, label, markers in _RAW_GROUPS:
+        entries = {
+            name: value
+            for name, value in remaining.items()
+            if any(marker in name for marker in markers)
+        }
+        for name in entries:
+            del remaining[name]
+        if entries:
+            groups.append(_as_group(key, label, entries))
+
+    # Filet de securite : tout compteur non reconnu reste visible.
+    if remaining:
+        groups.append(_as_group("autres", "Autres", remaining))
+    return groups
+
+
 def summarize_weapon_totals(weapons: Sequence[WeaponStats]) -> dict[str, Any]:
     """Agrégat transverse utile aux détecteurs et à l'UI."""
     total_kills = sum(w.kills for w in weapons)

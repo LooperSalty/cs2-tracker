@@ -12,6 +12,43 @@ from cs2tracker.gsi.tracker import LivePlayerMetrics
 from cs2tracker.storage.db import Database, row_to_dict, rows_to_list
 
 
+class SettingsRepository:
+    """Préférences persistantes, dont l'identité de l'utilisateur."""
+
+    #: Clé sous laquelle le SteamID de l'utilisateur est mémorisé.
+    ME_STEAMID = "me_steamid"
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    def get(self, key: str, default: str = "") -> str:
+        row = self._db.query_one("SELECT value FROM app_settings WHERE key = ?", (key,))
+        return str(row["value"]) if row else default
+
+    def set(self, key: str, value: str) -> None:
+        self._db.execute(
+            """
+            INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value, updated_at = excluded.updated_at
+            """,
+            (key, value, now_iso()),
+        )
+
+    def delete(self, key: str) -> None:
+        self._db.execute("DELETE FROM app_settings WHERE key = ?", (key,))
+
+    # --- identite de l'utilisateur -------------------------------------------
+    def get_me(self) -> str:
+        return self.get(self.ME_STEAMID)
+
+    def set_me(self, steamid64: str) -> None:
+        self.set(self.ME_STEAMID, steamid64)
+
+    def clear_me(self) -> None:
+        self.delete(self.ME_STEAMID)
+
+
 class PlayerRepository:
     """Joueurs connus du tracker (favoris, notes, dernière vue)."""
 

@@ -18,7 +18,11 @@
         </div>
 
         <nav class="nav" aria-label="Sections">
-            <button class="nav-item" data-page="player" aria-current="page">
+            <button class="nav-item" data-page="mine" aria-current="page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8z"/></svg>
+                <span>Mes stats</span>
+            </button>
+            <button class="nav-item" data-page="player">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
                 <span>Joueur</span>
             </button>
@@ -50,8 +54,80 @@
 
     <main class="stage">
 
+        <!-- ---------------------------------------------------- mes stats -->
+        <section class="page active" id="page-mine">
+            <header class="page-head">
+                <h1>Mes stats</h1>
+                <p>Ton profil CS2 complet, detecte automatiquement depuis ton compte Steam.</p>
+            </header>
+
+            <div class="identity" id="mine-identity" hidden>
+                <img class="avatar" id="mine-avatar" alt="" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>">
+                <div class="identity-main">
+                    <h2 id="mine-name">—</h2>
+                    <div class="identity-ids" id="mine-ids"></div>
+                    <div class="identity-meta" id="mine-meta"></div>
+                </div>
+                <div class="tags" id="mine-tags"></div>
+            </div>
+
+            <div class="overall" id="mine-overall" hidden>
+                <div class="overall-figure" id="mine-overall-figure">—</div>
+                <div class="overall-body">
+                    <div class="overall-tier" id="mine-overall-tier">—</div>
+                    <div class="overall-note" id="mine-overall-note"></div>
+                </div>
+                <button class="btn quiet" id="mine-not-me">Ce n'est pas moi</button>
+                <a class="btn quiet" id="mine-export" download>Tout exporter</a>
+            </div>
+
+            <div class="rank-grid" id="mine-ranks"></div>
+            <div id="mine-drift"></div>
+
+            <div class="tabs" role="tablist" id="mine-tabs">
+                <button class="tab" role="tab" aria-selected="true" data-panel="m-overview">Vue d'ensemble</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="m-weapons">Armes</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="m-maps">Cartes</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="m-all">Toutes mes stats</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="m-trend">Evolution</button>
+            </div>
+
+            <div class="panel active" data-panel="m-overview"><div class="table-wrap"><table class="data-table" id="tbl-mine-overview"></table></div></div>
+            <div class="panel" data-panel="m-weapons"><div class="table-wrap"><table class="data-table" id="tbl-mine-weapons"></table></div></div>
+            <div class="panel" data-panel="m-maps"><div class="table-wrap"><table class="data-table" id="tbl-mine-maps"></table></div></div>
+            <div class="panel" data-panel="m-all">
+                <p class="paste-help" id="mine-raw-count"></p>
+                <div id="mine-raw"></div>
+            </div>
+            <div class="panel" data-panel="m-trend">
+                <div class="chart-grid" id="mine-charts"></div>
+                <div class="table-wrap" style="margin-top:20px"><table class="data-table" id="tbl-mine-history"></table></div>
+            </div>
+
+            <div class="empty" id="mine-empty">
+                <strong>Chargement de ton profil…</strong>
+                <span class="spinner"></span>
+            </div>
+
+            <div class="empty" id="mine-setup" hidden>
+                <strong id="mine-setup-title">Quel compte est le tien ?</strong>
+                <p style="max-width:56ch;margin:0 auto 16px" id="mine-setup-reason">
+                    Plusieurs comptes Steam sont connus sur ce PC. Choisis le tien.
+                </p>
+                <p id="mine-setup-fix" hidden style="margin:0 auto 18px">
+                    <button class="btn go" id="mine-goto-settings">Aller a la configuration</button>
+                </p>
+                <div id="mine-candidates" class="candidates"></div>
+                <div class="setting-row" id="mine-manual-row" style="justify-content:center;margin-top:16px">
+                    <input class="field" id="mine-manual" style="max-width:320px"
+                           aria-label="Ton SteamID64" placeholder="Ou colle ton SteamID64">
+                    <button class="btn go" id="mine-manual-save">Valider</button>
+                </div>
+            </div>
+        </section>
+
         <!-- ------------------------------------------------------- joueur -->
-        <section class="page active" id="page-player">
+        <section class="page" id="page-player">
             <header class="page-head">
                 <h1>Joueur</h1>
                 <p>Cherche par SteamID64, SteamID2/3, URL de profil ou pseudo personnalise. Les statistiques proviennent de l'API publique Steam.</p>
