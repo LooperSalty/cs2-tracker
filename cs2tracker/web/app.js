@@ -401,6 +401,7 @@ function showPage(name) {
     });
     if (name === "live") live.start(); else live.stop();
     if (name === "mine") mine.load();
+    if (name === "audit") audit.load();
     if (name === "matches") matches.load();
     if (name === "settings") {
         settings.refresh();
@@ -1355,18 +1356,84 @@ const POLL_MS = 1000;
 
 const live = {
     timer: null,
+    socket: null,
     sequence: 0,
     steamids: [],
 
+    /**
+     * Le WebSocket pousse l'etat des que le jeu l'envoie, au lieu d'attendre le
+     * prochain sondage. Le minuteur reste en secours : si la connexion echoue
+     * ou tombe, on repasse au sondage plutot que d'afficher un ecran fige.
+     */
     start() {
-        if (this.timer) return;
+        if (this.socket || this.timer) return;
         this.tick();
-        this.timer = setInterval(() => this.tick(), POLL_MS);
+        this.connectSocket();
     },
 
     stop() {
         clearInterval(this.timer);
         this.timer = null;
+        if (this.socket) {
+            // `onclose` declencherait le repli : on le neutralise avant.
+            this.socket.onclose = null;
+            this.socket.close();
+            this.socket = null;
+        }
+    },
+
+    connectSocket() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        let socket;
+        try {
+            socket = new WebSocket(`${protocol}//${window.location.host}/ws/live`);
+        } catch {
+            this.startPolling();
+            return;
+        }
+        this.socket = socket;
+
+        socket.onmessage = (event) => {
+            let message;
+            try {
+                message = JSON.parse(event.data);
+            } catch {
+                return;
+            }
+            if (message.type === "state") this.applyPush(message);
+        };
+
+        socket.onerror = () => socket.close();
+        socket.onclose = () => {
+            this.socket = null;
+            this.startPolling();
+        };
+    },
+
+    /** Repli en sondage, uniquement si la page temps reel est encore visible. */
+    startPolling() {
+        if (this.timer) return;
+        if (!$("#page-live").classList.contains("active")) return;
+        this.timer = setInterval(() => this.tick(), POLL_MS);
+    },
+
+    /**
+     * Applique un etat pousse par le serveur.
+     *
+     * Le tableau des scores est recalcule cote serveur : plutot que de le
+     * reconstruire ici a partir de l'etat brut, on le redemande. C'est un appel,
+     * mais seulement quand quelque chose a reellement change.
+     */
+    applyPush(message) {
+        this.renderState({ connected: true, state: message.state });
+        this.renderEvents({
+            latest_sequence: this.sequence + (message.events || []).length,
+            events: message.events || [],
+        });
+        api("/api/live/scoreboard").then(
+            (rows) => this.renderBoard(rows),
+            () => {}
+        );
     },
 
     async tick() {
@@ -1601,6 +1668,273 @@ const matches = {
         }
     },
 };
+
+/* ------------------------------------------------------- page « comparer » */
+
+const comparison = {
+    async run(left, right) {
+        const button = $("#compare-form .btn.go");
+        button.disabled = true;
+        button.innerHTML = '<i class="spinner"></i>';
+        try {
+            const data = await api("/api/compare", {
+                method: "POST", body: { left, right },
+            });
+            this.render(data);
+        } catch (error) {
+            toast(error.message, "bad");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Comparer";
+        }
+    },
+
+    render(data) {
+        $("#compare-empty").hidden = true;
+        $("#compare-result").hidden = false;
+
+        const side = (player, wins) => `
+            <div class="duel-side">
+                ${player.avatar?.startsWith("https://")
+                    ? `<img class="avatar" alt="" src="${escapeAttr(player.avatar)}">`
+                    : `<span class="avatar"></span>`}
+                <div>
+                    <div class="duel-name">${escapeAttr(player.name || player.steamid64)}</div>
+                    <div class="duel-sub">${int(player.rounds)} manches · ${int(player.hours)} h</div>
+                    <div class="duel-wins">${wins} duel(s) gagne(s)</div>
+                </div>
+            </div>`;
+
+        if (!data.comparable) {
+            $("#duel-head").innerHTML = `<p class="paste-help">${escapeAttr(data.reason)}</p>`;
+            $("#duel-metrics").innerHTML = "";
+            $("#compare-warning").textContent = "";
+            return;
+        }
+
+        $("#duel-head").innerHTML =
+            side(data.left, data.tally.left)
+            + `<div class="duel-verdict">${escapeAttr(data.verdict)}</div>`
+            + side(data.right, data.tally.right);
+
+        $("#compare-warning").textContent = data.sample_warning || "";
+
+        $("#duel-metrics").innerHTML = data.metrics
+            .map((metric) => {
+                const fmt = (value) => formatMetric(value, metric.unit, 1);
+                // La barre traduit l'ecart relatif, pas la valeur absolue :
+                // comparer 1.2 et 1.4 doit rester lisible.
+                const total = Math.abs(metric.left) + Math.abs(metric.right) || 1;
+                const leftShare = (Math.abs(metric.left) / total) * 100;
+                return `
+                <div class="duel-row">
+                    <span class="duel-val ${metric.winner === "left" ? "wins" : ""}">${fmt(metric.left)}</span>
+                    <span class="duel-bar">
+                        <span class="duel-fill left" style="width:${leftShare.toFixed(1)}%"></span>
+                        <span class="duel-fill right" style="width:${(100 - leftShare).toFixed(1)}%"></span>
+                    </span>
+                    <span class="duel-val ${metric.winner === "right" ? "wins" : ""}">${fmt(metric.right)}</span>
+                    <span class="duel-label">${escapeAttr(metric.label)}</span>
+                </div>`;
+            })
+            .join("");
+    },
+};
+
+$("#compare-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const left = $("#compare-left").value.trim();
+    const right = $("#compare-right").value.trim();
+    if (!left || !right) {
+        toast("Saisis les deux joueurs.", "bad");
+        return;
+    }
+    comparison.run(left, right);
+});
+
+$("#compare-me").addEventListener("click", async () => {
+    try {
+        const identity = await api("/api/me/identity");
+        if (!identity.steamid64) {
+            toast("Choisis d'abord ton compte dans l'onglet Mes stats.", "bad");
+            return;
+        }
+        $("#compare-left").value = identity.steamid64;
+        $("#compare-right").focus();
+    } catch (error) {
+        toast(error.message, "bad");
+    }
+});
+
+/* ------------------------------------------------------- page « fiabilite » */
+
+const audit = {
+    async load() {
+        try {
+            const [summary, confirmations, groups, demos] = await Promise.all([
+                api("/api/audit/calibration"),
+                api("/api/audit/confirmations", { params: { limit: 25 } }),
+                api("/api/groups"),
+                api("/api/demos"),
+            ]);
+            this.renderSummary(summary);
+            this.renderConfirmations(confirmations);
+            this.renderGroups(groups);
+            this.renderDemos(demos);
+        } catch (error) {
+            toast(error.message, "bad");
+        }
+    },
+
+    renderSummary(summary) {
+        const tiles = [
+            ["Verdicts suivis", int(summary.verdicts_tracked)],
+            ["Confirmes bannis", int(summary.confirmed_banned)],
+            ["Taux global", pct(summary.overall_ban_rate)],
+            ["Jamais reverifies", int(summary.never_checked)],
+        ];
+        $("#audit-tiles").innerHTML = tiles
+            .map(([label, value]) => `
+                <div class="stat">
+                    <div class="stat-value">${value}</div>
+                    <div class="stat-label">${label}</div>
+                </div>`)
+            .join("");
+
+        // Une courbe utile est monotone : plus le score monte, plus le taux de
+        // bannissement doit monter. On l'annonce plutot que de le supposer.
+        const notes = [];
+        if (!summary.statistically_usable) {
+            notes.push(
+                `Echantillon trop faible (${summary.verdicts_tracked} verdicts). `
+                + "Il en faut au moins 200 pour qu'une conclusion tienne."
+            );
+        } else if (!summary.monotonic) {
+            notes.push(
+                "La courbe n'est pas croissante : le score ne separe pas encore "
+                + "correctement. Le moteur demande une recalibration."
+            );
+        } else {
+            notes.push("La courbe est croissante : le score se comporte comme attendu.");
+        }
+        notes.push(summary.note);
+
+        $("#audit-note").innerHTML = `
+            <div class="drift ${summary.monotonic ? "calm" : ""}" style="margin-top:16px">
+                ${notes.map((n) => `<p>${escapeAttr(n)}</p>`).join("")}
+            </div>`;
+
+        const buckets = summary.buckets || [];
+        $("#audit-curve").innerHTML = barList(
+            buckets.map((bucket) => ({
+                label: `${bucket.range}  (${bucket.verdicts})`,
+                value: Math.round(bucket.ban_rate * 100),
+                color: bucket.verdicts ? "var(--critical)" : "var(--line-2)",
+            })),
+            { unit: " %", limit: 10 }
+        );
+    },
+
+    renderConfirmations(rows) {
+        renderTable(
+            $("#tbl-audit-conf"),
+            ["Joueur", "Score au verdict", "Verdict", "Analyse le", "Banni le"],
+            (rows || []).map((row) => [
+                row.persona_name || row.steamid64,
+                Math.round(row.score),
+                row.verdict,
+                shortDate(row.analysed_at),
+                shortDate(row.banned_at),
+            ]),
+            {
+                emptyText:
+                    "Aucun verdict confirme pour l'instant. Lance une reverification "
+                    + "apres quelques jours d'analyses.",
+            }
+        );
+    },
+
+    renderGroups(data) {
+        $("#groups-note").textContent = data.note || "";
+        renderTable(
+            $("#tbl-groups"),
+            ["Taille", "Membres"],
+            (data.clusters || []).map((cluster) => [
+                cluster.size, cluster.members.join(", "),
+            ]),
+            {
+                emptyText:
+                    "Aucun groupe detecte. Le graphe se construit en analysant "
+                    + "des lobbies entiers.",
+            }
+        );
+    },
+
+    renderDemos(data) {
+        $("#demos-note").textContent = data.parser_installed
+            ? `${data.count} demo(s) trouvee(s). Clique pour analyser.`
+            : data.hint;
+
+        renderTable(
+            $("#tbl-demos"),
+            ["Demo", "Taille", "Modifiee"],
+            (data.demos || []).map((demo) => ({
+                cells: [demo.name, `${demo.size_mb} Mo`, shortDate(demo.modified)],
+                path: demo.path,
+            })),
+            {
+                onRowClick: data.parser_installed
+                    ? (row) => this.analyseDemo(row.path)
+                    : null,
+                emptyText: "Aucune demo trouvee dans le dossier de CS2.",
+            }
+        );
+    },
+
+    async analyseDemo(path) {
+        const output = $("#demo-result");
+        output.hidden = false;
+        output.textContent = "Analyse en cours… (plusieurs secondes)";
+        try {
+            const result = await api("/api/demos/analyse", {
+                method: "POST", body: { path, steamid64: "" },
+            });
+            if (!result.available) {
+                output.textContent = result.reason;
+                return;
+            }
+            const lines = [
+                `${result.demo} — score ${result.score}/100`,
+                "",
+                ...result.findings.map((f) =>
+                    `[${Math.round(f.score * 100)}] ${f.label}\n    ${f.explanation}`),
+                "",
+                result.disclaimer,
+            ];
+            output.textContent = lines.join("\n");
+        } catch (error) {
+            output.textContent = error.message;
+        }
+    },
+};
+
+$("#audit-refresh").addEventListener("click", () => audit.load());
+
+$("#audit-recheck").addEventListener("click", async () => {
+    const button = $("#audit-recheck");
+    button.disabled = true;
+    $("#audit-status").textContent = "Interrogation de Valve…";
+    try {
+        const result = await api("/api/audit/recheck", { method: "POST" });
+        $("#audit-status").textContent = result.message
+            || `${result.checked} profil(s) reverifie(s), ${result.newly_banned} nouveau(x) bannissement(s).`;
+        audit.load();
+    } catch (error) {
+        $("#audit-status").textContent = error.message;
+    } finally {
+        button.disabled = false;
+    }
+});
 
 /* --------------------------------------------------------- page « reglages » */
 

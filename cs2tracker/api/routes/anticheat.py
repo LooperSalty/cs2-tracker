@@ -93,8 +93,26 @@ async def analyse_player(
     if persist:
         context.snapshots.save(profile)
         context.analyses.save(result)
+        _record_verdict(context, profile, result)
 
     return ok(result.as_dict(include_features=include_features))
+
+
+def _record_verdict(context: ContextDep, profile, result) -> None:
+    """Consigne le verdict pour pouvoir le confronter plus tard aux sanctions.
+
+    L'état des bannissements **au moment de l'analyse** est enregistré : seule
+    une sanction postérieure validera le verdict. Un compte déjà banni ne prouve
+    rien, puisque le moteur voyait la sanction.
+    """
+    bans = profile.bans
+    context.audit.record(
+        result.steamid,
+        analysed_at=result.analysed_at,
+        score=result.suspicion_score,
+        verdict=result.verdict,
+        bans_at_verdict=bans.total_bans if bans else 0,
+    )
 
 
 @router.get("/{steamid}/report", summary="Rapport texte lisible")
@@ -140,6 +158,17 @@ async def _analyse_profiles(
             context.players.upsert_from_profile(profile)
             context.snapshots.save(profile)
             context.analyses.save(result)
+            _record_verdict(context, profile, result)
+
+        # Les joueurs d'un meme lobby se sont croises : on alimente le graphe
+        # qui permettra ensuite de reperer les groupes.
+        lobby = [
+            (str(p.identity.get("steamid64", "")), "")
+            for p in profiles
+            if p.identity.get("steamid64")
+        ]
+        if len(lobby) >= 2:
+            context.teammates.record_lobby(lobby)
 
     return {
         "analysed": len(ordered),

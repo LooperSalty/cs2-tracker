@@ -79,6 +79,8 @@ class Settings:
     """Configuration applicative immuable."""
 
     steam_api_key: str
+    #: Cle FACEIT, distincte de celle de Steam. Facultative.
+    faceit_api_key: str
     api_host: str
     api_port: int
     gsi_token: str
@@ -107,9 +109,16 @@ class Settings:
             raise MissingApiKeyError()
         return self.steam_api_key
 
+    @property
+    def has_faceit_key(self) -> bool:
+        return bool(self.faceit_api_key)
+
     def with_steam_key(self, key: str) -> "Settings":
         """Renvoie une *nouvelle* configuration (jamais de mutation en place)."""
         return replace(self, steam_api_key=key.strip())
+
+    def with_faceit_key(self, key: str) -> "Settings":
+        return replace(self, faceit_api_key=key.strip())
 
 
 def _load_or_create_gsi_token(store: Path) -> str:
@@ -132,6 +141,7 @@ def load_settings() -> Settings:
     store = data_dir()
     return Settings(
         steam_api_key=_env("STEAM_API_KEY"),
+        faceit_api_key=_env("FACEIT_API_KEY"),
         api_host=_env("API_HOST", GSI_DEFAULT_HOST),
         api_port=_env_int("API_PORT", GSI_DEFAULT_PORT),
         gsi_token=_load_or_create_gsi_token(store),
@@ -162,17 +172,28 @@ def set_settings(settings: Settings) -> None:
     _settings = settings
 
 
-def persist_steam_key(key: str) -> None:
-    """Écrit la clé dans le ``.env`` du projet et rafraîchit la config."""
+def persist_env_value(name: str, value: str) -> None:
+    """Écrit une valeur dans le ``.env`` du projet, en remplaçant l'ancienne.
+
+    Les variantes préfixées sont retirées elles aussi : deux définitions de la
+    même clé donneraient un comportement dépendant de l'ordre de lecture.
+    """
     env_path = project_root() / ".env"
+    prefixes = (f"{name}=", f"{_ENV_PREFIX}{name}=")
+
     lines: list[str] = []
     if env_path.is_file():
         lines = [
             line
             for line in env_path.read_text(encoding="utf-8").splitlines()
-            if not line.strip().startswith(("STEAM_API_KEY=", f"{_ENV_PREFIX}STEAM_API_KEY="))
+            if not line.strip().startswith(prefixes)
         ]
-    lines.append(f"STEAM_API_KEY={key.strip()}")
+    lines.append(f"{name}={value.strip()}")
     env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    os.environ["STEAM_API_KEY"] = key.strip()
+    os.environ[name] = value.strip()
+
+
+def persist_steam_key(key: str) -> None:
+    """Écrit la clé Steam dans le ``.env`` et rafraîchit la configuration."""
+    persist_env_value("STEAM_API_KEY", key)
     set_settings(get_settings().with_steam_key(key))

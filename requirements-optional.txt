@@ -1,0 +1,5 @@
+# Dependances facultatives : chaque fonction se desactive proprement si le
+# module est absent, plutot que d'empecher l'application de demarrer.
+
+# Analyse de demos .dem — coeur Rust, plusieurs secondes par demo.
+demoparser2>=0.30.0

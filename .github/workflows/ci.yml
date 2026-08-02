@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -26,10 +27,27 @@ jobs:
       - name: Lancer la suite de tests
         run: python -m pytest -v
 
+  overlay:
+    name: Overlay natif
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Le generateur est resolu par le script : les runners GitHub embarquent
+      # Visual Studio, mais pas necessairement la meme version que localement.
+      - name: Construire l'overlay
+        run: powershell -ExecutionPolicy Bypass -File overlay/build.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: overlay
+          path: overlay/build/Release/CS2TrackerOverlay.exe
+          retention-days: 30
+
   build:
     name: Executable Windows
     runs-on: windows-latest
-    needs: tests
+    needs: [tests, overlay]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,14 +61,53 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-build.txt
 
+      - name: Recuperer l'overlay
+        uses: actions/download-artifact@v4
+        with:
+          name: overlay
+          path: overlay/build/Release
+
       # Le script verifie que l'executable demarre reellement et sert
       # l'interface : un module charge dynamiquement et oublie se manifeste ici
       # plutot que chez l'utilisateur.
       - name: Construire et verifier
         run: powershell -ExecutionPolicy Bypass -File packaging/build.ps1 -SkipInstall
 
+      - name: Construire l'installeur
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\installer.iss
+        continue-on-error: true
+
       - uses: actions/upload-artifact@v4
         with:
-          name: CS2Tracker-exe
-          path: dist/CS2Tracker.exe
+          name: CS2Tracker
+          path: |
+            dist/CS2Tracker.exe
+            dist/CS2Tracker-Setup-*.exe
           retention-days: 30
+
+  release:
+    name: Publier la release
+    runs-on: windows-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: CS2Tracker
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: overlay
+          path: dist
+
+      - name: Attacher les binaires au tag
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/CS2Tracker.exe
+            dist/CS2Tracker-Setup-*.exe
+            dist/CS2TrackerOverlay.exe

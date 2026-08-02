@@ -625,6 +625,70 @@ a:hover { text-decoration: underline; }
     .bar-row { grid-template-columns: 96px 1fr 54px; }
 }
 
+/* ---------------------------------------------------- duel entre deux joueurs */
+.duel-head {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 20px;
+    align-items: center;
+    padding: 18px 0 22px;
+    border-bottom: 1px solid var(--line);
+}
+.duel-side { display: flex; align-items: center; gap: 12px; }
+.duel-side:last-of-type { flex-direction: row-reverse; text-align: right; }
+.duel-name { font-size: 16px; font-weight: 700; }
+.duel-sub { font-size: 11.5px; color: var(--dust); margin-top: 2px; }
+.duel-wins {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--flash);
+    margin-top: 4px;
+}
+.duel-verdict {
+    font-size: 12.5px;
+    color: var(--ash);
+    text-align: center;
+    max-width: 220px;
+}
+
+.duel-row {
+    display: grid;
+    grid-template-columns: 76px 1fr 76px;
+    grid-template-areas: "left bar right" "label label label";
+    gap: 4px 12px;
+    align-items: center;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--plate);
+}
+.duel-val {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    color: var(--ash);
+}
+.duel-val:first-child { grid-area: left; }
+.duel-val:nth-of-type(2) { grid-area: right; text-align: right; }
+/* Le gagnant du duel est le seul element colore de la ligne. */
+.duel-val.wins { color: var(--flash); font-weight: 700; }
+.duel-bar { grid-area: bar; display: flex; height: 6px; gap: 2px; }
+.duel-fill { display: block; height: 100%; border-radius: 2px; }
+.duel-fill.left { background: var(--flash); }
+.duel-fill.right { background: var(--ct); }
+.duel-label {
+    grid-area: label;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--dust);
+    text-align: center;
+}
+
+@media (max-width: 620px) {
+    .duel-head { grid-template-columns: 1fr; }
+    .duel-side:last-of-type { flex-direction: row; text-align: left; }
+}
+
 /* --------------------------------------------------------- courbes d'evolution */
 .chart-grid {
     display: grid;

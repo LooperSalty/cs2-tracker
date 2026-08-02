@@ -15,6 +15,12 @@ from cs2tracker.logging_setup import get_logger
 from cs2tracker.steam.client import SteamClient
 from cs2tracker.steam.service import SteamService
 from cs2tracker.storage.db import Database
+from cs2tracker.faceit import FaceitClient
+from cs2tracker.storage.audit import AuditRepository
+from cs2tracker.storage.matches_history import (
+    PlayerMatchRepository,
+    TeammateRepository,
+)
 from cs2tracker.storage.repositories import (
     AnalysisRepository,
     MatchRepository,
@@ -38,9 +44,13 @@ class AppContext:
     analyses: AnalysisRepository
     matches: MatchRepository
     settings_repo: SettingsRepository
+    audit: AuditRepository
+    player_matches: PlayerMatchRepository
+    teammates: TeammateRepository
     recorder: MatchRecorder
     steam_client: SteamClient | None = None
     steam_service: SteamService | None = None
+    faceit: FaceitClient | None = None
 
     @property
     def steam(self) -> SteamService:
@@ -125,6 +135,10 @@ def build_context(settings: Settings) -> AppContext:
         analyses=AnalysisRepository(database),
         matches=matches,
         settings_repo=SettingsRepository(database),
+        audit=AuditRepository(database),
+        player_matches=PlayerMatchRepository(database),
+        teammates=TeammateRepository(database),
+        faceit=FaceitClient(settings.faceit_api_key),
         recorder=MatchRecorder(matches, players, enabled=settings.record_matches),
         steam_client=steam_client,
         steam_service=steam_service,
@@ -134,4 +148,6 @@ def build_context(settings: Settings) -> AppContext:
 async def shutdown_context(context: AppContext) -> None:
     if context.steam_client is not None:
         await context.steam_client.close()
+    if context.faceit is not None:
+        await context.faceit.close()
     context.database.close()

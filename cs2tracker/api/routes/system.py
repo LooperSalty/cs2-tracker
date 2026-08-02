@@ -6,7 +6,12 @@ from fastapi import APIRouter
 
 from cs2tracker import __version__
 from cs2tracker.api.deps import ContextDep
-from cs2tracker.api.schemas import GsiInstallRequest, SteamKeyRequest, ok
+from cs2tracker.api.schemas import (
+    FaceitKeyRequest,
+    GsiInstallRequest,
+    SteamKeyRequest,
+    ok,
+)
 from cs2tracker.config import persist_steam_key
 from cs2tracker.core.errors import (
     ConfigError,
@@ -196,6 +201,43 @@ async def restart_application() -> dict:
             ),
         )
     return ok({"restarting": True, "message": "Redemarrage en cours..."})
+
+
+@router.get("/update", summary="Une version plus recente existe-t-elle ?")
+async def check_update() -> dict:
+    """Signale une mise à jour sans jamais l'installer.
+
+    Télécharger et exécuter un binaire sans accord explicite serait le
+    comportement d'un logiciel indésirable.
+    """
+    from cs2tracker.updater import check_for_update
+
+    return ok((await check_for_update()).as_dict())
+
+
+@router.post("/faceit-key", summary="Enregistrer la cle FACEIT")
+async def save_faceit_key(payload: FaceitKeyRequest, context: ContextDep) -> dict:
+    """FACEIT est le seul classement competitif accessible : le rang Premier de
+    CS2 n'est pas expose par l'API Steam."""
+    from cs2tracker.config import persist_env_value
+    from cs2tracker.faceit import FaceitClient
+
+    try:
+        persist_env_value("FACEIT_API_KEY", payload.key)
+    except OSError as exc:
+        raise ConfigError(
+            str(exc),
+            user_message="Ecriture du fichier .env impossible.",
+        ) from exc
+
+    previous = context.faceit
+    context.settings = context.settings.with_faceit_key(payload.key)
+    context.faceit = FaceitClient(payload.key)
+    if previous is not None:
+        await previous.close()
+
+    return ok({"saved": True, "applied": True,
+               "message": "Cle FACEIT enregistree et activee."})
 
 
 @router.post("/cache/clear", summary="Vider le cache Steam")

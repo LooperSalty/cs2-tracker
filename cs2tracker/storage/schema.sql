@@ -108,6 +108,71 @@ CREATE TABLE IF NOT EXISTS match_players (
 
 CREATE INDEX IF NOT EXISTS idx_match_players_steamid ON match_players(steamid64);
 
+-- Suivi des verdicts : a-t-on eu raison ? -------------------------------------
+-- Chaque analyse jugee «suspecte» est reverifiee periodiquement aupres de
+-- Valve. C'est la seule boucle de retroaction possible : sans elle, le moteur
+-- ne peut jamais apprendre de ses erreurs.
+CREATE TABLE IF NOT EXISTS verdict_audit (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    steamid64      TEXT    NOT NULL,
+    analysed_at    TEXT    NOT NULL,
+    score          REAL    NOT NULL,
+    verdict        TEXT    NOT NULL,
+    -- Etat des sanctions au moment de l'analyse, pour ne compter que les
+    -- bannissements *posterieurs* au verdict.
+    bans_at_verdict INTEGER NOT NULL DEFAULT 0,
+    last_checked_at TEXT,
+    checks          INTEGER NOT NULL DEFAULT 0,
+    -- Renseigne des qu'un bannissement apparait apres coup.
+    banned_at       TEXT,
+    bans_now        INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(steamid64, analysed_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_pending
+    ON verdict_audit(banned_at, last_checked_at);
+CREATE INDEX IF NOT EXISTS idx_audit_verdict ON verdict_audit(verdict);
+
+-- Performances match par match -------------------------------------------------
+-- Steam ne donne que des cumuls depuis la creation du compte. Enregistrer
+-- chaque match separement transforme un point unique en distribution.
+CREATE TABLE IF NOT EXISTS player_matches (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    steamid64     TEXT    NOT NULL,
+    played_at     TEXT    NOT NULL,
+    source        TEXT    NOT NULL,           -- gsi | steam_last_match | faceit
+    external_id   TEXT,                       -- identifiant cote source
+    map_name      TEXT    NOT NULL DEFAULT '',
+    rounds        INTEGER NOT NULL DEFAULT 0,
+    kills         INTEGER NOT NULL DEFAULT 0,
+    deaths        INTEGER NOT NULL DEFAULT 0,
+    assists       INTEGER NOT NULL DEFAULT 0,
+    headshots     INTEGER NOT NULL DEFAULT 0,
+    damage        INTEGER NOT NULL DEFAULT 0,
+    mvps          INTEGER NOT NULL DEFAULT 0,
+    won           INTEGER,
+    details_json  TEXT    NOT NULL DEFAULT '{}',
+    UNIQUE(steamid64, source, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_player_matches
+    ON player_matches(steamid64, played_at DESC);
+
+-- Compagnons de jeu ------------------------------------------------------------
+-- Un compte suspect qui joue toujours avec les memes comptes, eux aussi
+-- suspects, est un signal qu'aucune analyse individuelle ne produit.
+CREATE TABLE IF NOT EXISTS teammates (
+    steamid64      TEXT    NOT NULL,
+    teammate_id    TEXT    NOT NULL,
+    matches        INTEGER NOT NULL DEFAULT 0,
+    same_team      INTEGER NOT NULL DEFAULT 0,
+    first_seen_at  TEXT    NOT NULL,
+    last_seen_at   TEXT    NOT NULL,
+    PRIMARY KEY (steamid64, teammate_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_teammates_count ON teammates(matches DESC);
+
 CREATE TABLE IF NOT EXISTS match_rounds (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     match_id     INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,

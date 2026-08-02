@@ -89,6 +89,62 @@ class LobbyPasteRequest(BaseModel):
         return cleaned
 
 
+class CompareRequest(BaseModel):
+    """Deux joueurs à confronter."""
+
+    left: str = Field(..., min_length=1, max_length=256)
+    right: str = Field(..., min_length=1, max_length=256)
+
+    @field_validator("left", "right")
+    @classmethod
+    def strip_side(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Identifiant vide")
+        return cleaned
+
+
+class CalibrationRequest(BaseModel):
+    """Corpus étiquetés servant à mesurer le moteur."""
+
+    #: Comptes portant une sanction confirmee.
+    cheaters: list[str] = Field(default_factory=list, max_length=200)
+    #: Joueurs de confiance : professionnels, streamers, comptes verifies.
+    legit: list[str] = Field(default_factory=list, max_length=200)
+    #: Signaler un joueur honnete coute plus cher que manquer un tricheur.
+    max_false_positive_rate: float = Field(default=0.02, ge=0.0, le=0.5)
+
+    @field_validator("cheaters", "legit")
+    @classmethod
+    def clean_corpus(cls, values: list[str]) -> list[str]:
+        return [v.strip() for v in values if v and v.strip()]
+
+
+class DemoAnalyseRequest(BaseModel):
+    """Démo à analyser, avec le joueur à isoler."""
+
+    path: str = Field(..., min_length=1, max_length=1024)
+    #: Vide = tous les joueurs de la demo.
+    steamid64: str = Field(default="", max_length=17)
+
+    @field_validator("path")
+    @classmethod
+    def check_path(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.lower().endswith(".dem"):
+            raise ValueError("Le fichier doit etre une demo .dem")
+        return cleaned
+
+
+class FaceitKeyRequest(BaseModel):
+    key: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("key")
+    @classmethod
+    def clean_key(cls, value: str) -> str:
+        return value.strip()
+
+
 class SetMeRequest(BaseModel):
     """Désignation manuelle du compte de l'utilisateur."""
 

@@ -37,6 +37,14 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3l7.5 3v6c0 4.5-3 8-7.5 9.5C7.5 20 4.5 16.5 4.5 12V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg>
                 <span>Anti-triche</span>
             </button>
+            <button class="nav-item" data-page="compare">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 4v16M15 4v16M4 9h5M15 15h5"/></svg>
+                <span>Comparer</span>
+            </button>
+            <button class="nav-item" data-page="audit">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 20h18M6 20V9M11 20V4M16 20v-7M21 20v-4"/></svg>
+                <span>Fiabilite</span>
+            </button>
             <button class="nav-item" data-page="matches">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M9 9v11"/></svg>
                 <span>Matchs</span>
@@ -342,6 +350,78 @@
             <div class="empty" id="ac-empty">
                 <strong>Aucune analyse</strong>
                 Saisis un SteamID64, ou analyse d'un coup tous les joueurs vus en direct.
+            </div>
+        </section>
+
+        <!-- ------------------------------------------------------ comparer -->
+        <section class="page" id="page-compare">
+            <header class="page-head">
+                <h1>Comparer deux joueurs</h1>
+                <p>Confrontation metrique par metrique, avec le vainqueur de chaque duel.</p>
+            </header>
+
+            <form class="search" id="compare-form">
+                <input class="field" id="compare-left" autocomplete="off"
+                       aria-label="Premier joueur" placeholder="Premier joueur — SteamID, URL ou pseudo">
+                <input class="field" id="compare-right" autocomplete="off"
+                       aria-label="Second joueur" placeholder="Second joueur">
+                <button class="btn go" type="submit">Comparer</button>
+                <button class="btn" type="button" id="compare-me">Moi vs…</button>
+            </form>
+
+            <div id="compare-result" hidden>
+                <div class="duel-head" id="duel-head"></div>
+                <p class="paste-help" id="compare-warning"></p>
+                <div id="duel-metrics"></div>
+            </div>
+
+            <div class="empty" id="compare-empty">
+                <strong>Aucune comparaison</strong>
+                Saisis deux joueurs pour les confronter.
+            </div>
+        </section>
+
+        <!-- ----------------------------------------------------- fiabilite -->
+        <section class="page" id="page-audit">
+            <header class="page-head">
+                <h1>Fiabilite du moteur</h1>
+                <p>Les joueurs signales finissent-ils reellement bannis ? C'est la seule
+                   preuve possible que le score veut dire quelque chose.</p>
+            </header>
+
+            <div class="setting-row" style="margin-bottom:18px">
+                <button class="btn go" id="audit-recheck">Reverifier les profils analyses</button>
+                <button class="btn quiet" id="audit-refresh">Actualiser</button>
+                <span class="paste-help" id="audit-status" style="margin:0"></span>
+            </div>
+
+            <div class="strip" id="audit-tiles"></div>
+            <div id="audit-note"></div>
+
+            <div class="visual-grid" style="margin-top:20px">
+                <div class="panel-card wide">
+                    <span class="eyebrow">Taux de bannissement observe par palier</span>
+                    <div id="audit-curve"></div>
+                </div>
+            </div>
+
+            <div class="tabs" role="tablist" id="audit-tabs">
+                <button class="tab" role="tab" aria-selected="true" data-panel="a-conf">Verdicts confirmes</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="a-groups">Groupes suspects</button>
+                <button class="tab" role="tab" aria-selected="false" data-panel="a-demos">Demos</button>
+            </div>
+
+            <div class="panel active" data-panel="a-conf">
+                <div class="table-wrap"><table class="data-table" id="tbl-audit-conf"></table></div>
+            </div>
+            <div class="panel" data-panel="a-groups">
+                <p class="paste-help" id="groups-note"></p>
+                <div class="table-wrap"><table class="data-table" id="tbl-groups"></table></div>
+            </div>
+            <div class="panel" data-panel="a-demos">
+                <p class="paste-help" id="demos-note"></p>
+                <div class="table-wrap"><table class="data-table" id="tbl-demos"></table></div>
+                <pre class="code-out" id="demo-result" hidden></pre>
             </div>
         </section>
 
